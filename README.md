@@ -55,6 +55,8 @@ kubectl -n ts2560 port-forward svc/ts2560-dashboard 8560:80
 - Pod から機器（HTTP と UDP 123）と、公開NTPサーバー（UDP 123）に届く必要があります。NetworkPolicy で外向きの通信を絞っている場合は許可してください。
 - 外から見せる場合は、Service に Ingress などを足してください。ダッシュボード自体にログイン機能はありません。
 
+確かめ方、つまずきやすいところ、NetworkPolicy と Ingress の例、更新のしかたは [deploy/kubernetes/README.md](deploy/kubernetes/README.md) にまとめています。
+
 ## 設定
 
 設定ファイル（JSON）と環境変数で指定します。両方あれば環境変数が優先です。
@@ -86,3 +88,7 @@ kubectl -n ts2560 port-forward svc/ts2560-dashboard 8560:80
 - 機器の Web 画面の HTML を読んでいるので、ファームウェアの更新で画面が変わると読めなくなることがあります。動作を確かめたのはファームウェア 8.0.0 です。
 - 「妨害電波の指標」は TS-2560 が報告している値をそのまま出しています。単位と、いくつから問題かの基準は確認できていないので、絶対値ではなく、ふだんとの差で見てください。
 - 受信強度の「十分／やや弱め／弱い」などの境目は、目安として置いた値です。
+
+## ライセンス
+
+[MIT](LICENSE)
