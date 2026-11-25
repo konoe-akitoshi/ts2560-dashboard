@@ -33,7 +33,7 @@ cp credentials.env.example credentials.env
 
 ```
 TS2560_HOST=10.0.0.10
-TS2560_USERNAME=adm
+TS2560_USERNAME=********
 TS2560_PASSWORD=********
 ```
 
