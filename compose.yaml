@@ -1,0 +1,16 @@
+services:
+  ts2560-dashboard:
+    image: ghcr.io/konoe-akitoshi/ts2560-dashboard:latest
+    # 手元でビルドする場合は image の代わりに build: . を使う
+    restart: unless-stopped
+    ports:
+      - "8560:8560"
+    environment:
+      TS2560_HOST: ${TS2560_HOST}
+      TS2560_USERNAME: ${TS2560_USERNAME}
+      TS2560_PASSWORD: ${TS2560_PASSWORD}
+    volumes:
+      - ts2560-data:/data
+
+volumes:
+  ts2560-data:

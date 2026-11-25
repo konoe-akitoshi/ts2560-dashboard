@@ -1,0 +1,655 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TS-2560 Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  color-scheme:dark;
+  --page:#000; --tile:#0c0c0d; --tile-2:#19191a; --ring:rgba(255,255,255,.10);
+  --grid:#26262a; --axis:#3a3a40;
+  --text:#f4f3f0; --text-2:#c3c2b7; --muted:#8f8e85;
+  --accent:#4aa8ff; --accent-2:#1b3a66; --series:#4aa8ff;
+  --good:#0ca30c; --warning:#fab219; --serious:#ec835a; --critical:#d03b3b;
+  --spring:cubic-bezier(.34,1.3,.5,1); --ease:cubic-bezier(.3,.7,.2,1);
+  --pad:22px; --radius:28px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--page);color:var(--text)}
+body{font:500 15px/1.45 "Barlow","Hiragino Sans","Noto Sans JP",system-ui,sans-serif;-webkit-font-smoothing:antialiased;padding:0 16px 40px;min-height:100vh}
+.num{font-variant-numeric:tabular-nums}
+button{font:inherit;color:inherit}
+header,main,footer{max-width:1180px;margin:0 auto}
+
+/* ---------- header：左に状態、右に注意（小さい形） ---------- */
+header{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:14px 24px;padding:20px 6px 16px}
+.state{display:flex;align-items:center;gap:14px;min-width:0}
+.state h1{font-size:22px;font-weight:600;margin:0;line-height:1.25}
+.state p{margin:2px 0 0;color:var(--text-2);font-size:14px}
+.clock{text-align:center}
+.clock span{display:block;color:var(--muted);font-size:13px}
+.clock b{display:block;font-size:34px;font-weight:600;letter-spacing:.02em;line-height:1.1}
+.alerts{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
+.alert{display:flex;align-items:center;gap:9px;background:var(--tile);border:0;cursor:pointer;text-align:left;border-radius:22px;padding:7px 16px 7px 7px;min-height:40px;
+  box-shadow:inset 0 0 0 1px var(--ring);animation:pop .6s var(--spring) backwards;transition:transform .3s var(--spring),opacity .25s}
+.alert:active{transform:scale(.97)}.alert.gone{transform:scale(.6);opacity:0}
+.alert b{font-weight:600;white-space:nowrap}
+.alert .d{display:grid;grid-template-columns:0fr;opacity:0;color:var(--text-2);font-size:14px;transition:grid-template-columns .45s var(--spring),opacity .3s var(--ease)}
+.alert .d span{overflow:hidden;white-space:nowrap}
+.alert.open .d{grid-template-columns:1fr;opacity:1}
+.badge{flex:none;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;color:#fff;font-size:14px;font-weight:700;line-height:1}
+.badge.lg{width:38px;height:38px;font-size:19px}
+.badge.sm{width:18px;height:18px;font-size:11px}
+.badge.good{background:var(--good)}.badge.warning{background:var(--warning);color:#0b0b0b}
+.badge.serious{background:var(--serious)}.badge.critical{background:var(--critical)}.badge.none{background:#4a4a47}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@keyframes pop{from{opacity:0;transform:scale(.94) translateY(8px)}}
+
+/* ---------- 出来事のカード：何か起きている間だけ現れる ---------- */
+.fold{display:grid;grid-template-rows:0fr;transition:grid-template-rows .55s var(--spring)}
+.fold>div{overflow:hidden;min-height:0}
+.fold.on{grid-template-rows:1fr}
+#event-wrap{opacity:0;transition:grid-template-rows .55s var(--spring),opacity .35s var(--ease)}
+#event-wrap.on{opacity:1}
+#event{background:var(--tile);border-radius:var(--radius);box-shadow:inset 0 0 0 1px var(--ring);padding:var(--pad);margin-bottom:12px;cursor:pointer}
+.ev-row{display:flex;align-items:center;gap:14px}
+.ev-row h2{flex:1;font-size:19px;font-weight:600;margin:0;min-width:0}
+.ev-row .v{font-size:19px;font-weight:600;color:var(--accent);white-space:nowrap}
+#event.warning .ev-row .v,#event.serious .ev-row .v{color:var(--warning)}
+#event.critical .ev-row .v{color:#ff7a7a}
+.ev-more{padding:16px 0 0 52px}
+.ev-more p{margin:12px 0 0;color:var(--text-2);font-size:15px}
+.steps{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:6px}
+.steps div{font-size:14px;color:var(--muted)}
+.steps i{display:block;height:8px;border-radius:4px;background:var(--accent-2);margin-bottom:8px;transition:background .5s}
+.steps .done{color:var(--text)}.steps .done i{background:var(--accent)}
+.steps .cur{color:var(--text)}.steps .cur i{background:linear-gradient(90deg,var(--accent) 40%,var(--accent-2));animation:breathe 1.8s ease-in-out infinite}
+@keyframes breathe{50%{opacity:.55}}
+.prog{height:8px;border-radius:4px;background:var(--accent-2);overflow:hidden}
+.prog i{display:block;height:100%;border-radius:4px;background:var(--warning);transition:width 1s var(--ease)}
+
+/* ---------- tiles ---------- */
+#timeline{margin:0 6px 14px}
+.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:12px}
+.col{display:contents}
+.tile{position:relative;background:var(--tile);border-radius:var(--radius);padding:var(--pad);box-shadow:inset 0 0 0 1px rgba(255,255,255,.07);min-width:0;animation:pop .7s var(--spring) backwards}
+.c12{grid-column:span 12}.c8{grid-column:span 8}.c6{grid-column:span 6}.c7{grid-column:span 7}.c5{grid-column:span 5}.c4{grid-column:span 4}
+.th{display:flex;align-items:center;gap:10px;min-height:28px;margin-bottom:10px}
+.th h2{font-size:16px;font-weight:600;margin:0;flex:1;min-width:0}
+.th .v{font-size:16px;font-weight:600;color:var(--accent);white-space:nowrap}
+.th .v small{font-size:14px;font-weight:500;opacity:.8;margin-left:3px}
+.th .v.warn{color:var(--warning)}
+.th .note{color:var(--muted);font-size:13px;white-space:nowrap}
+.exp{flex:none;width:28px;height:28px;border-radius:50%;border:0;background:var(--tile-2);color:var(--text-2);cursor:pointer;display:grid;place-items:center;font-size:15px;line-height:1;
+  transition:transform .45s var(--spring),background .2s}
+.exp:hover{background:#262628}
+.tile.open .exp{transform:rotate(180deg)}
+.detail>div>.in{margin-top:16px;padding-top:16px;border-top:1px solid var(--ring)}
+.say{margin:10px 0 0;font-size:15px;line-height:1.55;color:var(--text-2)}
+.hero{display:flex;align-items:baseline;gap:8px;margin:-2px 0 8px}
+.hero b{font-size:48px;font-weight:600;letter-spacing:-.02em;line-height:1}
+.hero span{color:var(--text-2);font-size:17px}
+.empty{color:var(--muted);font-size:14px;padding:18px 0;text-align:center}
+.g{min-height:104px;display:flex;align-items:center;justify-content:center}
+.g>svg{width:100%}
+.pair{display:grid;grid-template-columns:minmax(170px,230px) minmax(0,1fr);gap:8px 22px;align-items:end;width:100%}
+.pair figure{margin:0;min-width:0}
+.pair figcaption{color:var(--muted);font-size:13px;text-align:center;margin-top:4px}
+.pair figcaption b{color:var(--text-2);font-weight:600}
+.polar svg{width:100%}
+#m-sky.hov .satg{opacity:.3}#m-sky.hov .satg.hl{opacity:1}
+.satg{transition:transform 1.4s var(--ease),opacity .2s}
+@media (max-width:640px){.pair{grid-template-columns:1fr}.polar{max-width:260px;margin:0 auto}}
+.dome text{font-size:13px}
+
+.peer{display:grid;grid-template-columns:1fr auto;gap:5px 12px;padding:12px 0;border-top:1px solid var(--ring)}
+.peer:first-child{border-top:0;padding-top:0}
+.peer .n{font-weight:600;font-size:16px}.peer .o{text-align:right;font-weight:600;font-size:16px}
+.peer .m{color:var(--text-2);font-size:13px;display:flex;align-items:center;gap:8px}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--text);background:var(--tile-2);border-radius:99px;padding:3px 10px 3px 4px}
+.reach{display:inline-flex;gap:3px}.reach i{width:6px;height:6px;border-radius:50%;background:#3a3a3d}.reach i.ok{background:var(--text-2)}
+
+.bars{display:flex;align-items:flex-end;gap:5px;height:96px;width:100%;justify-content:center}
+.bars i{flex:1;max-width:14px;min-height:7px;border-radius:7px;background:var(--accent-2);transition:height .9s var(--ease),background .4s}
+.bars i.on{background:var(--accent);box-shadow:0 0 14px rgba(74,168,255,.45)}
+.satg{transition:transform 1.4s var(--ease)}
+.satg text{fill:#d7e8ff;font-size:12px;font-weight:600}
+
+.kv{display:grid;grid-template-columns:auto 1fr;gap:8px 18px;font-size:14px;margin:0;max-width:560px}
+.kv dt{color:var(--text-2)}.kv dd{margin:0;text-align:right;font-weight:600;overflow-wrap:anywhere}
+table.t{width:100%;border-collapse:collapse;font-size:14px}
+table.t th{text-align:right;font-weight:500;color:var(--muted);font-size:13px;padding:0 0 8px}
+table.t td{text-align:right;padding:6px 0;border-top:1px solid var(--ring);color:var(--text-2)}
+table.t th:first-child,table.t td:first-child{text-align:left;color:var(--text);font-weight:600}
+table.t tr.off td{color:var(--muted)}
+.trend{margin-bottom:14px}.trend .l{display:flex;justify-content:space-between;font-size:14px;color:var(--text-2);margin-bottom:2px}.trend .l b{color:var(--text);font-weight:600}
+
+.info{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px 14px;margin-bottom:14px}
+.info div{min-width:0;font-weight:600;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.info span{display:block;color:var(--muted);font-size:13px;font-weight:500}
+.hw{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.hw .cell{background:var(--tile-2);border-radius:18px;padding:11px 14px}
+.hw .k{color:var(--text-2);font-size:13px}
+.hw .v{display:flex;align-items:center;gap:8px;font-weight:600;font-size:16px;margin-top:2px}
+.rows .r{display:grid;grid-template-columns:1fr auto auto;gap:14px;padding:7px 0;border-top:1px solid var(--ring);font-size:14px}
+.rows .r:first-child{border-top:0}
+.rows .r span:first-child{font-weight:600}.rows .r span:nth-child(n+2){color:var(--text-2);text-align:right}
+.log .r{display:grid;grid-template-columns:auto auto 1fr;gap:12px;padding:7px 0;border-top:1px solid var(--ring);font-size:13.5px}
+.log .r:first-child{border-top:0}
+.log .r span:first-child{color:var(--muted)}.log .r span:nth-child(2){color:var(--text-2)}.log .r span:last-child{overflow-wrap:anywhere}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13px;color:var(--text-2);margin-top:10px}
+.legend span{display:inline-flex;align-items:center;gap:6px}.legend i{width:10px;height:10px;border-radius:3px}
+
+svg{display:block;overflow:visible}
+svg text{fill:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+.tip{position:fixed;z-index:50;pointer-events:none;background:#000;border-radius:14px;padding:8px 12px;font-size:13px;box-shadow:0 0 0 1px var(--ring),0 10px 30px rgba(0,0,0,.7);
+  opacity:0;transform:scale(.9);transition:opacity .12s,transform .25s var(--spring);white-space:nowrap}
+.tip.on{opacity:1;transform:scale(1)}
+.tip b{display:block;font-size:15px;font-weight:600}.tip span{color:var(--text-2)}
+footer{margin-top:16px;color:var(--muted);font-size:13px;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:0 6px}
+
+@media (max-width:900px){
+  header{grid-template-columns:1fr}.clock{text-align:left}.alerts{justify-content:flex-start}
+  .c8,.c7,.c6,.c5,.c4{grid-column:span 12}
+}
+@media (min-width:1400px){
+  body{padding:0 28px 28px}
+  header,main,footer{max-width:2100px}
+  .grid{grid-template-columns:minmax(0,1fr) minmax(0,1.3fr) minmax(0,1fr);align-items:start}
+  .col{display:flex;flex-direction:column;gap:12px;min-width:0}
+  .col-b{display:grid;grid-template-columns:1fr 1fr;align-content:start}
+  .col-b .tile{grid-column:auto}
+  .col-b #m-sky,.col-b #m-jam{grid-column:span 2}
+  .hw{grid-template-columns:repeat(3,1fr)}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <div class="state" id="state"></div>
+  <div class="clock"><span>機器の時刻（JST）</span><b class="num" id="clock">--:--:--</b></div>
+  <div class="alerts" id="alerts" aria-live="polite"></div>
+</header>
+
+<main>
+  <div class="fold" id="event-wrap"><div>
+    <section id="event" role="status" aria-live="polite">
+      <div class="ev-row"><span class="badge lg" id="ev-b"></span><h2 id="ev-t"></h2><span class="v num" id="ev-v"></span></div>
+      <div class="fold on" id="ev-fold"><div><div class="ev-more"><div id="ev-g"></div><p id="ev-p"></p></div></div></div>
+    </section>
+  </div></div>
+
+  <div id="timeline"></div>
+
+  <section class="grid">
+    <div class="col col-a">
+      <div class="tile c8" id="t-diff">
+        <div class="th"><h2>基準時刻との差</h2><span class="note" id="ref-note"></span></div>
+        <div class="hero"><b class="num" id="diff-now">–</b><span>ms</span></div>
+        <div id="diff-chart"></div>
+      </div>
+      <div class="tile c4" id="t-peers">
+        <div class="th"><h2>時刻源</h2><span class="note">ntpd の選択状況</span></div>
+        <div id="peers"></div>
+      </div>
+      <div class="tile c12" id="t-log" data-detail>
+        <div class="th"><h2>ログ</h2></div>
+        <div class="log" id="log"></div>
+      </div>
+    </div>
+    <div class="col col-b">
+      <div class="tile c12" id="m-sky" data-detail><div class="th"><h2>空</h2><span class="v num"></span></div><div class="g"></div><p class="say"></p></div>
+      <div class="tile c6" id="m-sync" data-detail><div class="th"><h2>同期</h2><span class="v num"></span></div><div class="g"></div><p class="say"></p></div>
+      <div class="tile c6" id="m-snr" data-detail><div class="th"><h2>受信強度</h2><span class="v num"></span></div><div class="g"></div><p class="say"></p></div>
+      <div class="tile c12" id="m-jam" data-detail><div class="th"><h2>妨害電波の指標</h2><span class="v num"></span></div><div class="g"></div><p class="say"></p></div>
+    </div>
+    <div class="col col-c">
+      <div class="tile c4" id="t-hw" data-detail>
+        <div class="th"><h2>機器</h2></div>
+        <div class="info num" id="info"></div><div class="hw" id="hw"></div>
+      </div>
+      <div class="tile c8" id="t-req">
+        <div class="th"><h2>NTPリクエスト数</h2><span class="note">1時間ごと</span></div>
+        <div id="req-chart"></div>
+      </div>
+      <div class="tile c12" id="t-clients" data-detail>
+        <div class="th"><h2>クライアント</h2><span class="note" id="client-note"></span></div>
+        <div class="rows" id="clients"></div>
+      </div>
+    </div>
+  </section>
+</main>
+<footer><span id="foot-left"></span><span id="foot-right"></span></footer>
+<div class="tip" id="tip"></div>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <filter id="glow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="4"/></filter>
+</defs></svg>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt = (v, d = 2) => v == null ? '–' : (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toFixed(d);
+const hhmm = t => new Date(t * 1000).toLocaleTimeString('ja-JP', {hour: '2-digit', minute: '2-digit'});
+const hms = t => new Date(t * 1000).toLocaleTimeString('ja-JP');
+const dur = sec => sec < 3600 ? Math.max(1, Math.round(sec / 60)) + '分' : Math.floor(sec / 3600) + '時間' + (Math.round(sec / 60) % 60 ? Math.round(sec / 60) % 60 + '分' : '');
+const GLYPH = {good: '✓', warning: '!', serious: '!', critical: '✕'};
+const badge = (level, cls = '') => `<span class="badge ${level} ${cls}" aria-hidden="true">${GLYPH[level] || '–'}</span>`;
+const SRC = n => (n || '').replace('TimeServer', '').replace('OJJY', '光テレホンJJY').replace(/^LOCA?L$/, '内部時計');
+const logTime = l => new Date(l.time).getTime() / 1000;
+const WIDE = () => innerWidth >= 1400;
+let S = null, lastDrawn = 0, lastW = 0;
+
+/* 変わったときだけ書き換える（毎回作り直さない） */
+function setHTML(el, html) { if (el._h !== html) { el._h = html; el.innerHTML = html; } }
+function setText(el, t) { if (el.textContent !== t) el.textContent = t; }
+/* 数字は数え上げ・数え下げで変える */
+function setNum(el, to, f) {
+  if (to == null || isNaN(to)) { el._n = null; setText(el, '–'); return; }
+  const from = el._n; el._n = to;
+  if (from == null || from === to || document.hidden) { el.textContent = f(to); return; }
+  const t0 = performance.now(), id = el._a = (el._a || 0) + 1;
+  const step = now => { if (el._a !== id) return; const k = Math.min(1, (now - t0) / 600), e = 1 - Math.pow(1 - k, 3);
+    el.textContent = f(from + (to - from) * e); if (k < 1) requestAnimationFrame(step); };
+  requestAnimationFrame(step);
+}
+
+/* ---------- tooltip ---------- */
+const tip = $('#tip');
+function showTip(e, html) {
+  tip.innerHTML = html; tip.classList.add('on');
+  const r = tip.getBoundingClientRect();
+  let x = e.clientX + 14, y = e.clientY - r.height - 12;
+  if (x + r.width > innerWidth - 8) x = e.clientX - r.width - 14;
+  if (y < 8) y = e.clientY + 16;
+  tip.style.left = x + 'px'; tip.style.top = y + 'px';
+}
+const hideTip = () => tip.classList.remove('on');
+function hover(root, sel, html) {
+  root.querySelectorAll(sel).forEach(n => { n.addEventListener('mousemove', e => showTip(e, html(n))); n.addEventListener('mouseleave', hideTip); });
+}
+
+/* ---------- 詳細は、同じタイルが下に伸びる（上の配置は変えない） ---------- */
+document.querySelectorAll('.tile[data-detail]').forEach(t => {
+  const b = document.createElement('button'); b.className = 'exp'; b.textContent = '⌄'; b.setAttribute('aria-label', '詳細を開く / 閉じる'); b.setAttribute('aria-expanded', 'false');
+  t.querySelector('.th').appendChild(b);
+  t.insertAdjacentHTML('beforeend', '<div class="fold detail"><div><div class="in"></div></div></div>');
+  b.addEventListener('click', () => { const on = t.classList.toggle('open'); t.querySelector('.detail').classList.toggle('on', on); b.setAttribute('aria-expanded', on); });
+});
+const det = id => $('#' + id + ' .detail .in');
+/* 「空」の2つの図で、同じ衛星を一緒に光らせる */
+{ const sky = $('#m-sky');
+  sky.addEventListener('mouseover', e => { const n = e.target.closest('.satg'); sky.querySelectorAll('.satg.hl').forEach(x => x.classList.remove('hl'));
+    sky.classList.toggle('hov', !!n); if (n) sky.querySelectorAll(`.satg[data-k="${n.dataset.k}"]`).forEach(x => x.classList.add('hl')); });
+  sky.addEventListener('mouseleave', () => sky.classList.remove('hov')); }
+
+/* ---------- header ---------- */
+const openAlerts = new Set();
+const alertKey = a => a.title.replace(/[\d.+\-−]+/g, '#');
+function renderHead() {
+  const al = S.alerts || [], level = al[0] ? al[0].level : 'good', d = S.device || {}, ntp = S.ntp || {}, probe = S.ntp_probe || {}, stratum = ntp.stratum ?? probe.stratum;
+  const title = {good: '正常に配信しています', warning: `配信中 · 注意が ${al.length} 件あります`, serious: '確認が必要です', critical: '異常があります'}[level];
+  setHTML($('#state'), `${badge(level, 'lg')}<div><h1>${title}</h1><p class="num">${stratum ? 'Stratum ' + stratum + ' · ' + esc(SRC(ntp.system_peer || probe.refid)) + ' · ' : ''}${esc(d.hostname || S.host || '')}</p></div>`);
+  const box = $('#alerts'), seen = new Set();
+  for (const a of al) {
+    const k = alertKey(a); seen.add(k);
+    let n = [...box.children].find(c => c.dataset.k === k);
+    if (!n) {
+      n = document.createElement('button'); n.className = 'alert'; n.dataset.k = k;
+      n.innerHTML = '<span class="badge"></span><b></b><span class="d"><span></span></span>';
+      n.addEventListener('click', () => { openAlerts.has(k) ? openAlerts.delete(k) : openAlerts.add(k); n.classList.toggle('open', openAlerts.has(k)); n.setAttribute('aria-expanded', openAlerts.has(k)); });
+      box.appendChild(n);
+    }
+    n.classList.remove('gone');
+    n.firstChild.className = 'badge ' + a.level; setText(n.firstChild, GLYPH[a.level]);
+    setText(n.children[1], a.title); setText(n.children[2].firstChild, a.detail);
+  }
+  for (const c of [...box.children]) if (!seen.has(c.dataset.k) && !c.classList.contains('gone')) { c.classList.add('gone'); openAlerts.delete(c.dataset.k); setTimeout(() => c.remove(), 300); }
+}
+function tick() {
+  if (!S) return;
+  setText($('#clock'), new Date(Date.now() + ((S.ntp_probe || {}).offset || 0) * 1000).toLocaleTimeString('ja-JP', {hour12: false}));
+}
+setInterval(tick, 1000);
+
+/* ---------- 出来事：始まりと終わりがあるものだけ。終われば消える ---------- */
+function currentEvent() {
+  const g = S.gnss || {}, ntp = S.ntp || {}, now = S.updated, logs = S.log || [], find = re => logs.find(l => re.test(l.msg));
+  if (ntp.system_peer === 'LOCAL' || (ntp.stratum || 0) > 1) {
+    const l = find(/synchronized to LOCAL|Lost reachable/), since = l ? logTime(l) : null;
+    return {id: 'local', level: 'critical', title: '内部時計で配信しています', value: since ? dur(now - since) + '経過' : '',
+      text: `使える時刻源がなく、Stratum ${ntp.stratum ?? '–'} で配信しています。この間、時刻は少しずつずれていきます。`};
+  }
+  if (g.state && g.state !== 'Sync') {
+    if (/hold/i.test(g.state)) {
+      const total = (S.holdover_hours || 24) * 3600, el = now - (S.gnss_since || now), left = Math.max(0, total - el);
+      return {id: 'holdover', level: 'serious', title: 'GNSSを見失い、内部の発振器で時刻を保っています', value: 'あと ' + dur(left), progress: el / total,
+        text: `同期維持時間（${S.holdover_hours || 24}時間）を過ぎると、GNSSは時刻源から外れます。` + (S.gnss_since_exact ? '' : '見失った時刻が分からないため、残り時間は長めに出ている可能性があります。')};
+    }
+    const l = find(/Starting Network Time Protocol/), since = l ? logTime(l) : S.gnss_since, fix = g.positioning && g.positioning !== 'None';
+    return {id: 'acquire', level: 'warning', title: 'GNSSを捕捉しています', value: since ? dur(now - since) + '経過' : '',
+      steps: [['衛星を追尾', (g.tracking || 0) > 0], ['位置を測る', !!fix], ['時刻を同期', false]],
+      text: `見えている ${g.visible ?? 0} 機のうち ${g.tracking ?? 0} 機を追尾しています。`};
+  }
+  const l = find(/synchronized to TimeServerGNSS/);
+  if (l && ntp.system_peer === 'TimeServerGNSS' && now - logTime(l) < 20 * 60)
+    return {id: 'synced', level: 'good', title: 'GNSSに同期しました', value: dur(now - logTime(l)) + '前', steps: [['衛星を追尾', true], ['位置を測る', true], ['時刻を同期', true]],
+      text: 'Stratum 1 で配信しています。このお知らせは同期から20分で消えます。'};
+  return null;
+}
+function renderEvent() {
+  const ev = currentEvent(), wrap = $('#event-wrap');
+  wrap.classList.toggle('on', !!ev);
+  if (!ev) return;
+  $('#event').className = ev.level;
+  $('#ev-b').className = 'badge lg ' + ev.level; setText($('#ev-b'), GLYPH[ev.level]);
+  setText($('#ev-t'), ev.title); setText($('#ev-v'), ev.value); setText($('#ev-p'), ev.text);
+  const g = $('#ev-g');
+  if (ev.steps) {
+    if (g.dataset.k !== 'steps') { g.dataset.k = 'steps'; g.innerHTML = '<div class="steps">' + ev.steps.map(s => `<div><i></i>${s[0]}</div>`).join('') + '</div>'; }
+    const cur = ev.steps.findIndex(s => !s[1]);
+    [...g.firstChild.children].forEach((n, i) => n.className = ev.steps[i][1] ? 'done' : i === cur ? 'cur' : '');
+  } else if (ev.progress != null) {
+    if (g.dataset.k !== 'prog') { g.dataset.k = 'prog'; g.innerHTML = '<div class="prog"><i></i></div>'; }
+    g.firstChild.firstChild.style.width = Math.min(100, ev.progress * 100).toFixed(1) + '%';
+  } else { g.dataset.k = ''; g.innerHTML = ''; }
+}
+$('#event').addEventListener('click', () => $('#ev-fold').classList.toggle('on'));
+
+/* ---------- 履歴：直線のタイムライン（位置＝時刻、色＝そのときの時刻源） ---------- */
+function lockSpans(now, t0) {
+  const spans = []; let cur = null;
+  for (const l of [...(S.log || [])].reverse()) {
+    const m = l.msg.match(/synchronized to (?:TimeServer)?(\w+)/), boot = /Starting Network Time Protocol/.test(l.msg);
+    const src = m ? m[1] : /Lost reachable association/.test(l.msg) ? 'LOCAL' : null;
+    if (!src && !boot) continue;
+    if (cur && src === cur.src) continue;
+    const t = logTime(l);
+    if (cur) { cur.b = t; spans.push(cur); }
+    cur = boot ? null : {src, a: t};
+  }
+  if (cur) { cur.b = now; cur.now = true; spans.push(cur); }
+  return spans.filter(s => s.b > t0).map(s => ({...s, a: Math.max(s.a, t0)}));
+}
+const SPAN_COL = {GNSS: 'var(--accent)', OJJY: '#2f6fb5', LOCAL: 'var(--warning)'};
+function renderTimeline() {
+  const el = $('#timeline'), W = el.clientWidth, H = 58, Y = 26, now = S.updated || Date.now() / 1000, t0 = now - 12 * 3600, spans = lockSpans(now, t0);
+  const x = t => 4 + Math.max(0, t - t0) / (now - t0) * (W - 56);
+  let h = `<svg height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="直近12時間、どの時刻源に同期していたか"><rect x="4" y="${Y - 3}" width="${W - 56}" height="6" rx="3" fill="#1c1c1f"/>`;
+  for (let t = Math.ceil(t0 / 3600) * 3600; t < now; t += 3600) { const hr = new Date(t * 1000).getHours();
+    h += `<line x1="${x(t)}" x2="${x(t)}" y1="${Y + 7}" y2="${Y + (hr % 3 ? 10 : 13)}" stroke="var(--axis)"/>` + (hr % 3 ? '' : `<text x="${x(t)}" y="${Y + 27}" text-anchor="middle">${String(hr).padStart(2, '0')}:00</text>`); }
+  spans.forEach((s, i) => { const a = x(s.a), b = x(s.b); if (b - a < 1) return;
+    h += `<g class="sp" data-i="${i}"><rect x="${a}" y="${Y - 12}" width="${b - a}" height="24" fill="transparent"/><rect x="${a + 1}" y="${Y - 3}" width="${Math.max(1, b - a - 2)}" height="6" rx="3" fill="${SPAN_COL[s.src] || '#6b6a64'}"/>` +
+      (b - a > 70 ? `<text x="${(a + b) / 2}" y="${Y - 9}" text-anchor="middle" style="fill:var(--text-2)">${esc(SRC(s.src))}</text>` : '') + '</g>'; });
+  h += `<line x1="${x(now)}" x2="${x(now)}" y1="${Y - 9}" y2="${Y + 9}" stroke="var(--text)" stroke-width="2" stroke-linecap="round"/><text x="${x(now) + 9}" y="${Y + 4}" style="fill:var(--text-2)">いま</text></svg>`;
+  setHTML(el, h);
+  hover(el, '.sp', n => { const s = spans[n.dataset.i]; return `<b>${esc(SRC(s.src))} に同期</b><span class="num">${hhmm(s.a)} 〜 ${s.now ? 'いま' : hhmm(s.b)}（${dur(s.b - s.a)}）</span>`; });
+}
+
+/* ---------- charts ---------- */
+function niceMax(v) { for (const n of [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000]) if (v <= n) return n; return Math.ceil(v / 1e4) * 1e4; }
+function lineChart(el, pts) {
+  pts = pts.filter(p => p.v != null);
+  if (pts.length < 2) { setHTML(el, '<div class="empty">データをためています…</div>'); return; }
+  const W = el.clientWidth, H = 170, L = 46, R = 10, T = 8, B = 24;
+  const ymax = niceMax(Math.max(1, ...pts.map(p => Math.abs(p.v))) * 1.1), t0 = pts[0].t, t1 = pts[pts.length - 1].t, span = Math.max(1, t1 - t0);
+  const x = t => L + (t - t0) / span * (W - L - R), y = v => T + (ymax - v) / (2 * ymax) * (H - T - B), last = pts[pts.length - 1];
+  el._h = null;
+  el.innerHTML = `<svg height="${H}" viewBox="0 0 ${W} ${H}" style="width:100%" role="img" aria-label="基準時刻との差の推移">
+    ${[ymax, 0, -ymax].map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--${v ? 'grid' : 'axis'})"/><text x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v)}</text>`).join('')}
+    <text x="${L}" y="${H - 4}">${hhmm(t0)}</text><text x="${W - R}" y="${H - 4}" text-anchor="end">${hhmm(t1)}</text>
+    <path d="${pts.map((p, i) => (i ? 'L' : 'M') + x(p.t).toFixed(1) + ' ' + y(p.v).toFixed(1)).join('')}" fill="none" stroke="var(--series)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    <circle class="cur" cx="${x(last.t)}" cy="${y(last.v)}" r="5" fill="#fff" stroke="var(--tile)" stroke-width="2"/>
+    <rect x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent"/></svg>`;
+  const cur = el.querySelector('.cur'), rect = el.querySelector('rect');
+  rect.addEventListener('mousemove', e => { const mx = e.clientX - el.querySelector('svg').getBoundingClientRect().left; let b = pts[0];
+    for (const p of pts) if (Math.abs(x(p.t) - mx) < Math.abs(x(b.t) - mx)) b = p;
+    cur.setAttribute('cx', x(b.t)); cur.setAttribute('cy', y(b.v)); showTip(e, `<b class="num">${fmt(b.v)} ms</b><span>${hms(b.t)}</span>`); });
+  rect.addEventListener('mouseleave', () => { cur.setAttribute('cx', x(last.t)); cur.setAttribute('cy', y(last.v)); hideTip(); });
+}
+function barChart(el, items, H) {
+  if (!items.length) { setHTML(el, '<div class="empty">データがありません</div>'); return; }
+  const W = el.clientWidth, L = 42, R = 4, T = 8, B = 24, ymax = niceMax(Math.max(1, ...items.map(i => i.v)));
+  const step = (W - L - R) / items.length, bw = Math.max(2, Math.min(22, step - 2)), y = v => T + (1 - v / ymax) * (H - T - B), base = H - B;
+  const bar = (it, i) => { const h = Math.max(it.v > 0 ? 2 : 1.5, base - y(it.v)), x0 = L + i * step + (step - bw) / 2, r = Math.min(4, bw / 2, h);
+    return `<g class="bar" data-i="${i}"><rect x="${L + i * step}" y="${T}" width="${step}" height="${H - T}" fill="transparent"/>
+      <path d="M${x0} ${base}V${base - h + r}q0 ${-r} ${r} ${-r}h${bw - 2 * r}q${r} 0 ${r} ${r}V${base}z" fill="var(--series)"/>${it.label ? `<text x="${x0 + bw / 2}" y="${H - 5}" text-anchor="middle">${esc(it.label)}</text>` : ''}</g>`; };
+  setHTML(el, `<svg height="${H}" viewBox="0 0 ${W} ${H}" style="width:100%" role="img">${[ymax, ymax / 2].map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--grid)"/><text x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${v}</text>`).join('')}
+    <line x1="${L}" x2="${W - R}" y1="${base}" y2="${base}" stroke="var(--axis)"/>${items.map(bar).join('')}</svg>`);
+  hover(el, '.bar', n => items[n.dataset.i].tip);
+}
+/* 小さな推移グラフ。mode 'zero'=0を中心に上下対称、'base'=ふだんの値（中央値）を破線で示す */
+function spark(el, pts, o) {
+  pts = pts.filter(p => p.v != null);
+  if (pts.length < 3) { setHTML(el, '<div class="empty" style="padding:0">データをためています…</div>'); return; }
+  const W = el.clientWidth || 260, H = o.H || 104, T = 10, B = 22, L = 4, R = o.refLabel ? 52 : 8, vs = pts.map(p => p.v), last = pts[pts.length - 1];
+  let lo, hi;
+  if (o.mode === 'zero') { hi = Math.max(o.min || 1, ...vs.map(Math.abs)) * 1.15; lo = -hi; }
+  else { lo = Math.min(...vs); hi = Math.max(...vs); const pad = Math.max(o.min || 1, (hi - lo) * .25); lo = Math.max(0, lo - pad); hi += pad; }
+  const t0 = pts[0].t, t1 = last.t, x = t => L + (t - t0) / Math.max(1, t1 - t0) * (W - L - R), y = v => T + (hi - v) / (hi - lo) * (H - T - B), ref = o.mode === 'zero' ? 0 : o.base;
+  el._h = null;
+  el.innerHTML = `<svg height="${H}" viewBox="0 0 ${W} ${H}" style="width:100%" role="img" aria-label="${o.label}">
+    ${ref != null ? `<line x1="${L}" x2="${W - R}" y1="${y(ref)}" y2="${y(ref)}" stroke="#3a4a63" ${o.mode === 'zero' ? '' : 'stroke-dasharray="3 4"'}/><text x="${W - R + 8}" y="${y(ref) + 4}">${o.refLabel || ''}</text>` : ''}
+    <text x="${L}" y="${H - 4}">${hhmm(t0)}</text><text x="${W - R}" y="${H - 4}" text-anchor="end">${hhmm(t1)}</text>
+    <path d="${pts.map((p, i) => (i ? 'L' : 'M') + x(p.t).toFixed(1) + ' ' + y(p.v).toFixed(1)).join('')}" fill="none" stroke="var(--${o.warn ? 'warning' : 'accent'})" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    <circle class="cur" cx="${x(t1)}" cy="${y(last.v)}" r="4.5" fill="#fff" stroke="var(--tile)" stroke-width="2"/><rect width="${W - R}" height="${H}" fill="transparent"/></svg>`;
+  const cur = el.querySelector('.cur'), rect = el.querySelector('rect');
+  rect.addEventListener('mousemove', e => { const mx = e.clientX - el.querySelector('svg').getBoundingClientRect().left; let b = pts[0];
+    for (const p of pts) if (Math.abs(x(p.t) - mx) < Math.abs(x(b.t) - mx)) b = p;
+    cur.setAttribute('cx', x(b.t)); cur.setAttribute('cy', y(b.v)); showTip(e, `<b class="num">${o.fmt(b.v)}</b><span>${hms(b.t)}</span>`); });
+  rect.addEventListener('mouseleave', () => { cur.setAttribute('cx', x(t1)); cur.setAttribute('cy', y(last.v)); hideTip(); });
+}
+const spanOf = pts => { const v = pts.filter(p => p.v != null); return v.length < 2 ? '' : dur(v[v.length - 1].t - v[0].t); };
+
+/* ---------- GNSS ---------- */
+const satName = s => ({GPS: 'G', QZSS: 'J', GALILEO: 'E', GLONASS: 'R'}[s.system] || '') + s.prn;
+const satTip = s => `<b>${satName(s)} <span>(${esc(s.system)})</span></b><span class="num">受信強度 ${s.snr} · 仰角 ${s.elev}° · 方位 ${s.azim}° · ${s.tracked ? '追尾中' : '未追尾'}</span>`;
+const DIR8 = ['北', '北東', '東', '南東', '南', '南西', '西', '北西'];
+function spread(tr) {
+  let x = 0, y = 0;
+  for (const s of tr) { const w = Math.cos(s.elev * Math.PI / 180), a = s.azim * Math.PI / 180; x += w * Math.sin(a); y += w * Math.cos(a); }
+  const len = tr.length ? Math.hypot(x, y) / tr.length : 0, az = (Math.atan2(x, y) * 180 / Math.PI + 360) % 360;
+  return {len, dir: DIR8[Math.round(az / 45) % 8]};
+}
+function skyPlot(el, sats, sky) {       // 中心が真上、外周が地平線。下地は、これまでにその方角で受けた強さ
+  const C = 150, R = 124;
+  if (!el.firstChild) el.innerHTML = `<svg viewBox="0 0 300 300" role="img" aria-label="衛星の配置（中心が真上、外周が地平線）">
+    <g class="cells"></g>
+    <circle cx="${C}" cy="${C}" r="${R}" fill="none" stroke="var(--accent-2)" stroke-width="3"/>
+    ${[2 / 3, 1 / 3].map(k => `<circle cx="${C}" cy="${C}" r="${R * k}" fill="none" stroke="#16263f"/>`).join('')}
+    ${[['東', C + R + 13, C + 5], ['南', C, C + R + 19], ['西', C - R - 13, C + 5]].map(d => `<text x="${d[1]}" y="${d[2]}" text-anchor="middle">${d[0]}</text>`).join('')}
+    <circle cx="${C}" cy="${C}" r="2" fill="var(--accent-2)"/><text x="${C}" y="${C - R - 12}" text-anchor="middle" style="fill:var(--text-2);font-weight:600">北</text><g class="sats"></g></svg>`;
+  if (sky) { const A = sky.az_step * Math.PI / 180, pt = (a, r) => `${(C + r * Math.sin(a)).toFixed(1)} ${(C - r * Math.cos(a)).toFixed(1)}`;
+    setHTML(el.querySelector('.cells'), sky.cells.map(c => { const a0 = c[0] * A, a1 = a0 + A, r1 = R * (90 - c[1] * sky.el_step) / 90, r0 = Math.max(0, R * (90 - (c[1] + 1) * sky.el_step) / 90);
+      return `<path d="M${pt(a0, r1)}A${r1} ${r1} 0 0 1 ${pt(a1, r1)}L${pt(a1, r0)}A${r0} ${r0} 0 0 0 ${pt(a0, r0)}Z" fill="${c[3] < 1 ? '#2a2a2e' : 'var(--accent)'}" opacity="${c[3] < 1 ? .55 : Math.min(.62, .1 + c[3] / 70).toFixed(2)}" stroke="var(--tile)" stroke-width="1"/>`; }).join('')); }
+  const g = el.querySelector('.sats'), seen = new Set();
+  for (const s of [...sats].sort((a, b) => a.tracked - b.tracked || a.snr - b.snr)) {
+    const key = satName(s); seen.add(key);
+    let n = g.querySelector(`[data-k="${key}"]`);
+    if (!n) { n = document.createElementNS('http://www.w3.org/2000/svg', 'g'); n.setAttribute('class', 'satg'); n.dataset.k = key;
+      n.addEventListener('mousemove', e => showTip(e, satTip(n._s))); n.addEventListener('mouseleave', hideTip); }
+    g.appendChild(n); n._s = s;
+    const r = R * (90 - s.elev) / 90, a = s.azim * Math.PI / 180, rad = 3.5 + Math.min(50, s.snr) / 50 * 4.5;
+    n.style.transform = `translate(${(C + r * Math.sin(a)).toFixed(1)}px,${(C - r * Math.cos(a)).toFixed(1)}px)`;
+    const shape = (size, attrs) => s.system === 'GPS' ? `<circle r="${size}" ${attrs}/>` : `<rect x="${-size}" y="${-size}" width="${2 * size}" height="${2 * size}" rx="1.5" transform="rotate(45)" ${attrs}/>`;
+    setHTML(n, '<circle r="13" fill="transparent"/>' + (s.tracked
+      ? `<circle r="${(rad + 5).toFixed(1)}" fill="var(--accent)" opacity=".55" filter="url(#glow)"/>` + shape(rad.toFixed(1), 'fill="#fff"') + `<text y="${(-rad - 7).toFixed(1)}" text-anchor="middle">${key}</text>`
+      : s.snr > 0 ? shape(Math.max(2.5, rad - 2).toFixed(1), 'fill="var(--tile)" stroke="#3d6aa8" stroke-width="1.5"') : shape(1.8, 'fill="var(--accent-2)"')));
+  }
+  for (const n of [...g.children]) if (!seen.has(n.dataset.k)) n.remove();
+}
+/* 空を1本の弧にまとめた図。北を向いて見上げた空を、西（左）から真上を通って東（右）へ。
+   点＝衛星、光っている区間＝いま受信できている空の範囲、扇＝アンテナからその範囲への広がり。
+   弧の少し内側は北寄り、外側は南寄りの衛星（重なりをほどくためでもある）。 */
+function domeAngle(s) { const e = s.elev * Math.PI / 180, a = s.azim * Math.PI / 180; return {th: Math.atan2(Math.sin(e), Math.cos(e) * Math.sin(a)) * 180 / Math.PI, ns: Math.cos(e) * Math.cos(a)}; }
+function skyArc(el, sats) {
+  const W = Math.max(240, el.clientWidth || 600), H = 206, cx = W / 2, cy = H - 26, rx = Math.min(W / 2 - 40, 440), ry = 142;
+  const P = (th, k = 1) => [cx + rx * k * Math.cos(th * Math.PI / 180), cy - ry * k * Math.sin(th * Math.PI / 180)];
+  const seg = (a, b) => { const p = P(b), q = P(a); return `M${p[0].toFixed(1)} ${p[1].toFixed(1)}A${rx} ${ry} 0 0 1 ${q[0].toFixed(1)} ${q[1].toFixed(1)}`; };
+  if (!el.firstChild || el._w !== W) { el._w = W; el._win = null;
+    el.innerHTML = `<svg class="dome" height="${H}" viewBox="0 0 ${W} ${H}" style="width:100%" role="img" aria-label="空を西から東へ横に見た図。点が衛星">
+      <defs><linearGradient id="beam" gradientUnits="userSpaceOnUse" x1="0" y1="${cy - ry}" x2="0" y2="${cy}"><stop offset="0" stop-color="#4aa8ff" stop-opacity=".46"/><stop offset="1" stop-color="#4aa8ff" stop-opacity="0"/></linearGradient></defs>
+      <path class="cone" fill="url(#beam)"/>
+      <path d="${seg(0, 180)}" fill="none" stroke="var(--accent-2)" stroke-width="10" stroke-linecap="round"/>
+      <path class="win" fill="none" stroke="var(--accent)" stroke-width="10" stroke-linecap="round"/>
+      <g class="sats"></g>
+      <circle cx="${cx}" cy="${cy}" r="5" fill="var(--text)"/><path d="M${cx - 12} ${cy + 10}h24" stroke="var(--text-2)" stroke-width="2" stroke-linecap="round"/>
+      <text x="${cx - rx}" y="${cy + 22}" text-anchor="middle">西</text><text x="${cx + rx}" y="${cy + 22}" text-anchor="middle">東</text><text x="${cx}" y="${cy + 26}" text-anchor="middle">アンテナ</text></svg>`; }
+  // 衛星の点：消さずに動かす
+  const g = el.querySelector('.sats'), seen = new Set();
+  for (const s of [...sats].sort((a, b) => a.tracked - b.tracked || a.snr - b.snr)) {
+    const key = satName(s), d = domeAngle(s), p = P(d.th, 1 - .13 * d.ns), rad = 4 + Math.min(50, s.snr) / 50 * 5; seen.add(key);
+    let n = g.querySelector(`[data-k="${key}"]`);
+    if (!n) { n = document.createElementNS('http://www.w3.org/2000/svg', 'g'); n.setAttribute('class', 'satg'); n.dataset.k = key;
+      n.addEventListener('mousemove', e => showTip(e, satTip(n._s))); n.addEventListener('mouseleave', hideTip); }
+    g.appendChild(n); n._s = s; n.style.transform = `translate(${p[0].toFixed(1)}px,${p[1].toFixed(1)}px)`;
+    const shape = (size, attrs) => s.system === 'GPS' ? `<circle r="${size}" ${attrs}/>` : `<rect x="${-size}" y="${-size}" width="${2 * size}" height="${2 * size}" rx="1.5" transform="rotate(45)" ${attrs}/>`;
+    setHTML(n, '<circle r="14" fill="transparent"/>' + (s.tracked
+      ? `<circle r="${(rad + 6).toFixed(1)}" fill="var(--accent)" opacity=".6" filter="url(#glow)"/>` + shape(rad.toFixed(1), 'fill="#fff" stroke="var(--tile)" stroke-width="2"')
+      : s.snr > 0 ? shape(3.5, 'fill="var(--tile)" stroke="#3d6aa8" stroke-width="1.5"') : shape(2, 'fill="#2b4f86"')));
+  }
+  for (const n of [...g.children]) if (!seen.has(n.dataset.k)) n.remove();
+  // 受信できている範囲：追尾中の衛星の、いちばん東〜いちばん西
+  const ths = sats.filter(s => s.tracked).map(s => domeAngle(s).th), win = el.querySelector('.win'), cone = el.querySelector('.cone');
+  if (!ths.length) { win.style.opacity = cone.style.opacity = 0; el._win = null; return null; }
+  win.style.opacity = cone.style.opacity = 1;
+  let a = Math.min(...ths), b = Math.max(...ths); if (b - a < 6) { a -= 3; b += 3; }
+  const draw = (a, b) => { const p = P(b), q = P(a); win.setAttribute('d', seg(a, b)); cone.setAttribute('d', `M${cx} ${cy}L${p[0].toFixed(1)} ${p[1].toFixed(1)}A${rx} ${ry} 0 0 1 ${q[0].toFixed(1)} ${q[1].toFixed(1)}Z`); };
+  const from = el._win || [a, b], t0 = performance.now(), id = el._wa = (el._wa || 0) + 1; el._win = [a, b];
+  draw(from[0], from[1]);
+  const step = now => { if (el._wa !== id) return; const k = Math.min(1, (now - t0) / 900), e = 1 - Math.pow(1 - k, 3); draw(from[0] + (a - from[0]) * e, from[1] + (b - from[1]) * e); if (k < 1) requestAnimationFrame(step); };
+  if (from[0] !== a || from[1] !== b) requestAnimationFrame(step);
+  return {east: Math.round(Math.min(...ths)), west: Math.round(180 - Math.max(...ths))};
+}
+function snrBars(el, sats) {            // 衛星ごとに棒を持ち続け、高さだけを変える。並びは衛星の名前順で固定
+  if (!el.firstChild) el.innerHTML = '<div class="bars" role="img" aria-label="衛星ごとの受信強度"></div>';
+  const box = el.firstChild, seen = new Set(), ord = [...sats].sort((a, b) => a.system.localeCompare(b.system) || a.prn - b.prn);
+  ord.forEach(s => { const key = satName(s); seen.add(key);
+    let n = [...box.children].find(c => c.dataset.k === key);
+    if (!n) { n = document.createElement('i'); n.dataset.k = key; n.style.height = '7px';
+      n.addEventListener('mousemove', e => showTip(e, satTip(n._s))); n.addEventListener('mouseleave', hideTip); }
+    box.appendChild(n); n._s = s; n.className = s.tracked ? 'on' : '';
+    requestAnimationFrame(() => n.style.height = Math.max(7, Math.min(50, s.snr) / 50 * 96) + 'px'); });
+  for (const n of [...box.children]) if (!seen.has(n.dataset.k)) n.remove();
+}
+function trend(el, title, pts, unit, zero) {
+  const v = pts.filter(p => p.v != null), last = v[v.length - 1];
+  el.innerHTML = `<div class="l"><span>${title}</span><b class="num">${last ? last.v + (unit ? ' ' + unit : '') : '–'}</b></div><div></div>`;
+  spark(el.lastChild, pts, {mode: 'base', H: 72, min: zero ? 1 : 2, label: title, fmt: x => x + (unit ? ' ' + unit : '')});
+}
+function gmod(id, sentence, warn) { const m = $('#m-' + id); setText(m.querySelector('.say'), sentence); m.querySelector('.v').classList.toggle('warn', !!warn); return {v: m.querySelector('.v'), g: m.querySelector('.g')}; }
+const kvs = rows => `<dl class="kv">${rows.map(r => `<dt>${r[0]}</dt><dd class="num">${esc(r[1] ?? '–')}</dd>`).join('')}</dl>`;
+function renderGnss() {
+  const g = S.gnss || {}, sats = g.satellites || [], tr = sats.filter(s => s.tracked), jam = (g.jamming || [])[0], sp = spread(tr), H = S.history || [], sync = g.state === 'Sync';
+  if (!g.state) { for (const id of ['sky', 'sync', 'snr', 'jam']) gmod(id, '取得できていません。'); return; }
+
+  let m = gmod('sky', '');
+  setHTML(m.v, `${tr.length}<small>/ ${sats.length} 機</small>`);
+  if (!m.g.firstChild) m.g.innerHTML = '<div class="pair"><figure><div class="polar"></div><figcaption><b>これまで</b> · 上から見た空</figcaption></figure><figure><div class="dome-box"></div><figcaption><b>いま</b> · 西から東へ横に見た空</figcaption></figure></div>';
+  const sky = S.sky || {cells: []}, win = skyArc(m.g.querySelector('.dome-box'), sats), dead = sats.filter(s => !s.tracked && !s.snr).length;
+  skyPlot(m.g.querySelector('.polar'), sats, S.sky);
+  // これまでの記録から、受信が弱い方角を言葉にする（低い空〜中くらいの高さで、十分な回数を見た区画だけ）
+  const oct = [...Array(8)].map(() => [0, 0, 0]);
+  for (const c of sky.cells) if (c[2] >= 6 && c[1] * sky.el_step < 60) { const o = oct[Math.round((c[0] + .5) * sky.az_step / 45) % 8]; o[0] += c[2]; o[1] += c[3] * c[2]; o[2]++; }
+  const seenOct = oct.filter(o => o[2]).length, weak = oct.map((o, i) => o[2] && o[1] / o[0] < 12 ? DIR8[i] : null).filter(Boolean);
+  const hours = sky.cells.reduce((a, c) => a + c[2], 0) * (sky.interval || 10) / Math.max(1, sats.length) / 3600;
+  const past = seenOct < 4 ? `受信の記録をためているところです（約${hours < 1 ? Math.max(1, Math.round(hours * 60)) + '分' : hours.toFixed(1) + '時間'}ぶん）。`
+    : weak.length ? `これまでの記録（約${hours.toFixed(1)}時間ぶん）では、${weak.join('・')}の空からの受信が弱くなっています。` : `これまでの記録（約${hours.toFixed(1)}時間ぶん）では、どの方角からも受信できています。`;
+  setText($('#m-sky .say'), (!win ? 'いまは衛星を受信できていません。'
+    : `いまは ${tr.length} 機を受信しています。` + (win.west >= 90 ? '届いているのは真上より東側の空だけです。' : win.east >= 90 ? '届いているのは真上より西側の空だけです。'
+      : `届いているのは、西はおよそ ${win.west}°、東はおよそ ${win.east}° より高い空からです。`) + (dead ? `見えているはずの ${dead} 機は信号が届いていません。` : '')) + past);
+  setHTML(det('m-sky'), '<p class="say" style="margin:0 0 14px">左の円は真上から見た空です（中心が真上、外周が地平線）。青い下地は、これまでに衛星がその方角にいたときの受信の強さで、濃いほど強く、灰色は信号が届かなかった方角です。右の弧は、北を向いて見上げた空を横から見たもので、弧の内側の点は北寄り、外側の点は南寄りの衛星です。</p>' +
+    kvs([['測位', g.positioning], ['PDOP（衛星の散らばり。小さいほど良い）', g.pdop], ['緯度', g.latitude], ['経度', g.longitude], ['高度', g.altitude == null ? null : g.altitude + ' m']]) +
+    `<table class="t num" style="margin-top:16px"><tr><th>衛星</th><th>種類</th><th>仰角</th><th>方位</th><th>受信強度</th><th>状態</th></tr>` +
+    [...sats].sort((a, b) => b.snr - a.snr).map(s => `<tr class="${s.tracked ? '' : 'off'}"><td>${satName(s)}</td><td>${esc(s.system)}</td><td>${s.elev}°</td><td>${s.azim}°</td><td>${s.snr}</td><td>${s.tracked ? '追尾中' : '未追尾'}</td></tr>`).join('') + '</table>');
+
+  const ev = (S.log || []).find(l => /synchronized to TimeServerGNSS/.test(l.msg)), since = ev && S.ntp?.system_peer === 'TimeServerGNSS' ? S.updated - logTime(ev) : null;
+  const us = g.offset_s == null ? null : g.offset_s * 1e6, up = H.map(h => ({t: h.t, v: h.gnss_us})), uv = up.filter(p => p.v != null).map(p => Math.abs(p.v));
+  m = gmod('sync', !sync ? `GNSSに同期していません（${g.state}）。追尾は ${tr.length} 機です。`
+    : (since != null ? `GNSSに同期して${dur(since)}。` : '') + (uv.length >= 3 ? `内部時計とのずれは、この${spanOf(up)}ずっと ±${Math.max(...uv).toFixed(1)} µs 以内です。` : `内部時計とのずれは ${fmt(us, 1)} µs です。`), !sync);
+  setText(m.v, sync ? '同期中' : g.state);
+  spark(m.g, up, {mode: 'zero', min: 2, label: '内部時計とGNSSのずれの推移', refLabel: '0 µs', fmt: v => fmt(v, 1) + ' µs'});
+  setHTML(det('m-sync'), kvs([['最終補正', g.last_adjust], ['同期が外れた回数', g.transitions?.Unsync], ['維持（ホールドオーバー）に入った回数', g.transitions?.Holdover],
+    ['周波数のずれ', g.ppb == null ? null : g.ppb + ' ppb'], ['アンテナ', g.antenna === 'Normal' ? '正常' : g.antenna], ['スプーフィング', g.spoofing === 'Not Detected' ? '検出なし' : g.spoofing]]));
+
+  const avg = tr.length ? tr.reduce((a, s) => a + s.snr, 0) / tr.length : null;
+  m = gmod('snr', avg == null ? '追尾中の衛星がありません。' : `追尾中の衛星の平均です。${avg >= 38 ? '十分な強さで受信できています。' : avg >= 30 ? 'やや弱めですが、追尾は続けられる強さです。' : '弱く、追尾が不安定になりやすい強さです。'}`);
+  if (!m.v.firstChild) m.v.innerHTML = '<span></span><small>dB-Hz</small>';
+  setNum(m.v.firstChild, avg, v => v.toFixed(0));
+  snrBars(m.g, sats);
+  setHTML(det('m-snr'), `<table class="t num"><tr><th>衛星</th><th>いま</th><th>直近10分の最小</th><th>最大</th><th>状態</th></tr>` +
+    [...sats].sort((a, b) => a.system.localeCompare(b.system) || a.prn - b.prn).map(s => `<tr class="${s.tracked ? '' : 'off'}"><td>${satName(s)}</td><td>${s.snr}</td><td>${s.snr_min ?? '–'}</td><td>${s.snr_max ?? '–'}</td><td>${s.tracked ? '追尾中' : '未追尾'}</td></tr>`).join('') +
+    '</table><div class="legend"><span><i style="background:var(--accent)"></i>追尾中</span><span><i style="background:var(--accent-2)"></i>未追尾</span><span>棒は左から衛星の名前順</span></div>');
+
+  const js = jam ? jam.strength : null, jp = H.map(h => ({t: h.t, v: h.jamming})), jv = jp.filter(p => p.v != null).map(p => p.v).sort((a, b) => a - b);
+  const base = jv.length >= 30 ? jv[jv.length >> 1] : null, rise = base != null && js != null && js >= base + 40;
+  m = gmod('jam', js == null ? '機器から値が出ていません。' : base == null ? 'ふだんの値を調べるため、データをためています。'
+    : `この${spanOf(jp)}は ${jv[0]}〜${jv[jv.length - 1]} のあいだで、ふだんは ${base} 前後です。` + (rise ? `いまはふだんより高くなっています。${sync ? '同期は続いています。' : '同期が外れています。'}` : '目立った変化はありません。'), rise);
+  setNum(m.v, js, v => v.toFixed(0));
+  spark(m.g, jp, {mode: 'base', base, min: 10, warn: rise, label: '妨害電波の指標の推移', refLabel: 'ふだん', fmt: v => '指標 ' + v});
+  const d = det('m-jam');
+  if (!d.firstChild) d.innerHTML = '<div class="trend"></div><div class="trend"></div><p class="say" style="margin-top:4px"></p>';
+  trend(d.children[0], '追尾している衛星', H.map(h => ({t: h.t, v: h.tracking})), '機', true);
+  trend(d.children[1], '追尾中の平均受信強度', H.map(h => ({t: h.t, v: h.avg_snr})), 'dB-Hz', false);
+  setText(d.children[2], `この指標は TS-2560 が ${jam ? jam.freq.toFixed(3) + ' MHz 付近について' : ''}報告している値です。単位と「いくつから問題か」の基準は資料で確認できていません。絶対値ではなく、ふだんとの差と、追尾数・受信強度が同時に悪化していないかを見てください。`);
+}
+
+/* ---------- その他のタイル ---------- */
+const TALLY = {selected: ['good', '選択中'], candidate: ['good', '候補'], falseticker: ['critical', '除外'], outlier: ['warning', '外れ値'], reject: ['none', '未使用'], backup: ['none', '予備']};
+function renderPeers() {
+  const ps = S.peers || [];
+  setHTML($('#peers'), ps.length ? ps.map(p => { const [lv, label] = TALLY[p.tally] || ['none', p.tally];
+    const bits = [...Array(8)].map((_, i) => `<i class="${p.reach >> (7 - i) & 1 ? 'ok' : ''}"></i>`).join('');
+    return `<div class="peer"><div class="n">${esc(SRC(p.name))}</div><div class="o num">${p.reach ? fmt(p.offset_ms, 3) + ' ms' : '–'}</div>
+      <div class="m"><span class="chip">${badge(lv, 'sm')}${label}</span><span class="reach" title="直近8回の応答">${bits}</span></div>
+      <div class="m num" style="justify-content:flex-end">${p.reach ? 'ゆらぎ ' + p.jitter_ms.toFixed(3) + ' ms' : '応答なし'}</div></div>`; }).join('') : '<div class="empty">取得できていません</div>');
+}
+function renderHw() {
+  const h = S.hardware || {}, d = S.device || {}, ok = v => /^Normal/.test(v || '');
+  const cell = (k, v, good, lvl = 'warning') => `<div class="cell"><div class="k">${esc(k)}</div><div class="v">${badge(good ? 'good' : lvl, 'sm')}<span class="num">${esc(v)}</span></div></div>`;
+  const info = (k, v) => `<div title="${esc(v ?? '')}"><span>${k}</span>${esc(v ?? '–')}</div>`;
+  setHTML($('#info'), info('モデル', d.model) + info('バージョン', d.version) + info('製造番号', d.serial) + info('稼働時間', d.uptime));
+  setHTML($('#hw'), [...(h.psu || []).map(p => cell(p.name.replace('PSU', '電源 '), ok(p.state) ? '正常' : '異常', ok(p.state))),
+    ...(h.temps || []).map(t => cell('温度 ' + t.name.replace(/Sensor\(\d\) near /, ''), (t.celsius ?? 0).toFixed(1) + ' ℃', ok(t.state), 'serious')),
+    h.fan && cell('ファン', ok(h.fan) ? '正常' : h.fan, ok(h.fan), 'serious'), h.oscillator && cell('発振器', ok(h.oscillator) ? '正常' : h.oscillator, ok(h.oscillator), 'serious')].filter(Boolean).join('') || '<div class="empty" style="grid-column:1/-1">取得できていません</div>');
+  const ips = o => Object.entries(o || {}).map(([k, v]) => [k, v.join(' / ')]);
+  setHTML(det('t-hw'), kvs([['ホスト名', d.hostname], ['サブシステム', d.subsystem], ['起動要因', d.boot_reason], ...ips(d.ipv4).map(r => ['IPv4 ' + r[0], r[1]]), ...ips(d.ipv6).map(r => ['IPv6 ' + r[0], r[1]]), ['RTC電池', h.rtc_battery]]));
+}
+function renderLists() {
+  const req = S.requests || [];
+  barChart($('#req-chart'), req.map(r => ({v: r.count, label: r.t.slice(11, 13) === '00' ? r.t.slice(5, 10).replace('-', '/') : r.t.slice(11, 13) % 6 === 0 ? r.t.slice(11, 13) + '時' : '',
+    tip: `<b class="num">${r.count} 件</b><span>${r.t.slice(5, 10).replace('-', '/')} ${r.t.slice(11)} からの1時間</span>`})), WIDE() ? 136 : 170);
+  const cl = S.clients || [], top = WIDE() ? 5 : 8, row = c => `<div class="r num"><span>${esc(c.addr)}</span><span>${c.count} 回</span><span>${c.last < 120 ? c.last + ' 秒前' : Math.round(c.last / 60) + ' 分前'}</span></div>`;
+  setText($('#client-note'), cl.length ? cl.length + ' 台' : '');
+  setHTML($('#clients'), cl.slice(0, top).map(row).join('') || '<div class="empty">取得できていません</div>');
+  setHTML(det('t-clients'), `<div class="rows">${cl.slice(top).map(row).join('') || '<div class="empty">これで全部です</div>'}</div>`);
+  const lg = S.log || [], lrow = l => `<div class="r num"><span>${esc(l.time.slice(5).replace('T', ' ').replace('-', '/'))}</span><span>${esc(l.proc)}</span><span>${esc(l.msg)}</span></div>`;
+  setHTML($('#log'), lg.slice(0, 5).map(lrow).join('') || '<div class="empty">取得できていません</div>');
+  setHTML(det('t-log'), `<div class="log">${lg.slice(5, 80).map(lrow).join('')}</div>`);
+}
+
+function render(force) {
+  renderHead(); renderEvent(); tick();
+  setText($('#foot-left'), `${S.host || ''}${S.demo ? '（デモデータ）' : ''}`);
+  setText($('#foot-right'), S.updated ? `最終更新 ${hms(S.updated)}${S._stale ? '（更新が止まっています）' : ''}` : '');
+  if (!force && S.updated === lastDrawn) return;
+  lastDrawn = S.updated;
+  renderTimeline();
+  setNum($('#diff-now'), S.ref_diff_ms, v => fmt(v));
+  setText($('#ref-note'), S.reference ? `公開NTPサーバー ${S.reference.split(',').length} 台との比較` : '');
+  lineChart($('#diff-chart'), (S.history || []).map(h => ({t: h.t, v: h.ref_diff_ms})));
+  renderPeers(); renderGnss(); renderHw(); renderLists();
+}
+async function poll() {
+  try { S = await (await fetch('/api/status', {cache: 'no-store'})).json(); }
+  catch (e) { S = Object.assign(S || {}, {_stale: true, alerts: [{level: 'critical', title: '収集サーバーに接続できません', detail: 'server.py が動いているか確認してください'}]}); }
+  render();
+}
+addEventListener('resize', () => { if (S && innerWidth !== lastW) { lastW = innerWidth; render(true); } });
+poll(); setInterval(poll, 3000);
+</script>
+</body>
+</html>

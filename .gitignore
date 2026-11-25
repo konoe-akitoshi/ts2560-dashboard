@@ -1,0 +1,12 @@
+# ログイン情報
+config.json
+deploy/kubernetes/credentials.env
+.env
+
+# 収集した履歴
+history*.json
+sky*.json
+*.tmp
+
+# ビルド結果
+/ts2560-dashboard

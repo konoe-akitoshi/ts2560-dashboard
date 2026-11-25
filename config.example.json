@@ -1,0 +1,14 @@
+{
+  "host": "192.0.2.10",
+  "username": "",
+  "password": "",
+  "port": 8560,
+  "bind": "127.0.0.1",
+  "interval": 10,
+  "slow_interval": 60,
+  "reference_ntp": ["ntp.nict.jp", "time.google.com", "ntp.jst.mfeed.ad.jp"],
+  "max_stratum": 1,
+  "max_ref_diff_ms": 5,
+  "jamming_rise": 40,
+  "gnss_holdover_hours": 24
+}

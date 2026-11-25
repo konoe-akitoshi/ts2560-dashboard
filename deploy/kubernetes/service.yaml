@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: ts2560-dashboard
+spec:
+  selector:
+    app.kubernetes.io/name: ts2560-dashboard
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

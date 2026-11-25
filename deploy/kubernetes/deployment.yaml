@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ts2560-dashboard
+  labels:
+    app.kubernetes.io/name: ts2560-dashboard
+spec:
+  # 履歴をボリュームに書くので1台だけ。入れ替えも、古いPodを止めてから新しいPodを起こす
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ts2560-dashboard
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ts2560-dashboard
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: dashboard
+          image: ghcr.io/konoe-akitoshi/ts2560-dashboard:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8560
+          envFrom:
+            - secretRef:
+                name: ts2560-credentials
+          # 時刻を比べる公開NTPサーバー（UDP 123 で外に出られる必要がある）
+          # env:
+          #   - name: TS2560_REFERENCE_NTP
+          #     value: ntp.nict.jp,time.google.com
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: ts2560-data
