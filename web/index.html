@@ -643,13 +643,21 @@ function render(force) {
   lineChart($('#diff-chart'), (S.history || []).map(h => ({t: h.t, v: h.ref_diff_ms})));
   renderPeers(); renderGnss(); renderHw(); renderLists();
 }
+// 更新は Server-Sent Events（/api/v1/events）で受け取る。つながらないときは3秒ごとに読みにいく
+const lost = () => { S = Object.assign(S || {}, {_stale: true, alerts: [{level: 'critical', title: '収集サーバーに接続できません', detail: 'ダッシュボードのサーバーが動いているか確認してください'}]}); render(); };
 async function poll() {
-  try { S = await (await fetch('/api/status', {cache: 'no-store'})).json(); }
-  catch (e) { S = Object.assign(S || {}, {_stale: true, alerts: [{level: 'critical', title: '収集サーバーに接続できません', detail: 'server.py が動いているか確認してください'}]}); }
-  render();
+  try { S = await (await fetch('/api/v1/status', {cache: 'no-cache'})).json(); render(); }
+  catch (e) { lost(); }
+}
+let pollTimer = null;
+function listen() {
+  if (!window.EventSource) { poll(); pollTimer = setInterval(poll, 3000); return; }
+  const es = new EventSource('/api/v1/events');
+  es.addEventListener('status', e => { clearInterval(pollTimer); pollTimer = null; S = JSON.parse(e.data); render(); });
+  es.onerror = () => { if (!pollTimer) { poll(); pollTimer = setInterval(poll, 3000); } };  // EventSource は自分でつなぎ直す。その間だけ読みにいく
 }
 addEventListener('resize', () => { if (S && innerWidth !== lastW) { lastW = innerWidth; render(true); } });
-poll(); setInterval(poll, 3000);
+listen();
 </script>
 </body>
 </html>

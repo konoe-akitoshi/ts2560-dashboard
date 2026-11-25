@@ -6,7 +6,11 @@
 
 機器の Web 画面にログインして状態画面（NTP状態・ピアリスト・GNSS状態・ハードウェア・ログなど）を読み、
 NTP（UDP 123）で公開NTPサーバーとの時刻差も測って、1枚のページにまとめます。
+同じ結果を、JSON の API（OpenAPI 3.1）、Server-Sent Events、Prometheus のメトリクスでも出します。
 Go の実行ファイル1つで動き、画面はその中に埋め込んであります。外部ライブラリは使っていません。
+
+機器には `interval` 秒ごとに1回だけアクセスします。画面・API・Prometheus がいくつあっても、機器の負荷は増えません。
+SNMP では取れない情報（衛星ごとの方角と受信強度、妨害電波、ntpd の時刻源の選択状況、クライアント一覧など）も扱えます。
 
 ## 見られるもの
 
@@ -70,6 +74,8 @@ kubectl -n ts2560 port-forward svc/ts2560-dashboard 8560:80
 | `TS2560_DATA` | | `.`（コンテナでは `/data`） | 履歴を保存する場所 |
 | `TS2560_CONFIG` | | `./config.json` | 設定ファイルの場所 |
 | `TS2560_DEMO=1` | | | デモデータで動かす |
+| `TS2560_LOG_FORMAT` | `log_format` | `text` | ログの形式。`json` にすると1行1件の JSON |
+| `TS2560_CORS_ORIGIN` | `cors_origin` | （なし） | API を別のオリジンのページから読ませるとき（例: `*`） |
 | | `interval` / `slow_interval` | `10` / `60` | 状態画面 / 機器情報・ログを読む間隔（秒） |
 | | `max_stratum` / `max_ref_diff_ms` | `1` / `5` | これを超えたら注意を出す |
 | | `jamming_rise` | `40` | 妨害電波の指標が、ふだんよりこれだけ上がったら注意を出す |
@@ -77,11 +83,60 @@ kubectl -n ts2560 port-forward svc/ts2560-dashboard 8560:80
 
 ## API
 
+読み取り専用です。仕様は `GET /api/openapi.json`（OpenAPI 3.1）にあります。Swagger UI などに読み込ませると一覧で見られます。
+
 | パス | 内容 |
 |---|---|
 | `GET /` | 画面 |
-| `GET /api/status` | 収集結果のすべて（JSON） |
-| `GET /healthz` | 死活確認（このサーバーが動いていれば 200） |
+| `GET /api/v1/status` | 収集結果のすべて（画面が使っているもの。`/api/status` も同じ） |
+| `GET /api/v1/ntp` | ntpd の状態、時刻源（ピア）の選択状況、公開NTPサーバーとの差 |
+| `GET /api/v1/gnss` | GNSS の状態（衛星・妨害電波・DOP・状態の遷移回数など） |
+| `GET /api/v1/gnss/satellites` | 見えている衛星（方角・仰角・受信強度・追尾中か） |
+| `GET /api/v1/sky` | 方角ごとの受信の記録 |
+| `GET /api/v1/hardware` | 電源・温度・ファン・発振器 |
+| `GET /api/v1/device` | 機種・ファームウェア・アドレス |
+| `GET /api/v1/clients` | NTP クライアント一覧 |
+| `GET /api/v1/requests` | 1時間ごとの NTP リクエスト数 |
+| `GET /api/v1/log` | メッセージログ |
+| `GET /api/v1/history` | 推移 |
+| `GET /api/v1/alerts` | いま出ている注意 |
+| `GET /api/v1/events` | 収集のたびに status を送る（Server-Sent Events）。画面もこれで更新しています |
+| `GET /metrics` | Prometheus のメトリクス |
+| `GET /healthz`・`/livez` | 生きているか |
+| `GET /readyz` | 最初の収集が終わったか（終わるまで 503） |
+
+- 応答には `ETag` が付きます。`If-None-Match` を付けて読むと、変わっていなければ 304 が返ります。
+- エラーは RFC 9457 の `application/problem+json` で返します。まだ機器から読めていない資源は 503 です。
+
+```bash
+curl -s localhost:8560/api/v1/gnss/satellites
+curl -sN localhost:8560/api/v1/events
+```
+
+## 監視（Prometheus）
+
+`/metrics` を Prometheus で集めると、Grafana でのグラフや Alertmanager での通知に使えます。
+主なメトリクスは次のとおりです（すべて `ts2560_` で始まります）。
+
+| メトリクス | 内容 |
+|---|---|
+| `ts2560_up` | 機器の状態画面をすべて読めたら 1 |
+| `ts2560_ntp_probe_stratum`・`ts2560_ntp_probe_leap_indicator` | クライアントに配っている Stratum とうるう秒指示子（3 は非同期） |
+| `ts2560_ntp_sync_source{source}` | ntpd の同期先（gnss・ojjy・server・local・none など）が 1 |
+| `ts2560_reference_offset_seconds` | 公開NTPサーバーとの差（正なら機器が進んでいる） |
+| `ts2560_ntp_peer_offset_seconds`・`_status`・`_reach_ratio` | 時刻源ごとの差・選択状況・到達率 |
+| `ts2560_gnss_state{state}` | GNSS の状態（Init・Sync・Holdover・Unsync など）が 1 |
+| `ts2560_gnss_satellites_tracked`・`_visible`・`ts2560_gnss_snr_max` | 衛星の数と最大の受信強度 |
+| `ts2560_gnss_satellite_snr{system,prn}` ほか | 衛星ごとの受信強度・仰角・方位・追尾 |
+| `ts2560_gnss_jamming_strength{band}` | 妨害電波の指標（単位不明。ふだんとの差で見る） |
+| `ts2560_gnss_antenna_ok`・`ts2560_gnss_spoofing_detected` | アンテナの状態、スプーフィング |
+| `ts2560_hardware_normal{component}` | 電源・ファン・発振器・温度などが Normal なら 1 |
+| `ts2560_temperature_celsius{sensor,location}` | 内部の温度 |
+| `ts2560_device_info`・`ts2560_dashboard_build_info` | 機種・ファームウェア、このダッシュボードの版 |
+
+Prometheus の指針では、エクスポーターはスクレイプのたびに相手を読むのが基本です。この機器は Web 画面へのログインと何枚もの画面の読み込みが必要で重いため、収集は `interval` 秒ごとの1回にまとめ、`/metrics` はその結果を返します。値がどれだけ新しいかは `ts2560_last_collect_timestamp_seconds` で分かります。
+
+Kubernetes 用の ServiceMonitor と、手引きの目安に合わせたアラートのルール（PrometheusRule）を [deploy/kubernetes/monitoring](deploy/kubernetes/monitoring) に置いています。
 
 ## 注意
 

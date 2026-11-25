@@ -6,6 +6,9 @@ resources:
   - pvc.yaml
   - deployment.yaml
   - service.yaml
+# Prometheus Operator がある場合は、次の2行のコメントを外す（ServiceMonitor と PrometheusRule が入る）
+# components:
+#   - monitoring
 # 機器のアドレスとログイン情報。credentials.env.example をコピーして credentials.env を作る（git には入らない）
 secretGenerator:
   - name: ts2560-credentials

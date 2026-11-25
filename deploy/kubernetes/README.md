@@ -10,6 +10,7 @@
 | `pvc.yaml` | 履歴を保存するボリューム（100Mi） |
 | `credentials.env.example` | 機器のアドレスとログイン情報のひな形 |
 | `kustomization.yaml` | 上をまとめたもの。`credentials.env` から Secret を作る |
+| `monitoring/` | Prometheus Operator 用の ServiceMonitor と PrometheusRule（入れるかは選べます） |
 
 ## 必要なもの
 
@@ -65,6 +66,14 @@ kubectl -n ts2560 port-forward svc/ts2560-dashboard 8560:80
 
 ブラウザで http://127.0.0.1:8560/ を開きます。画面の上に「収集エラー」が出ていなければ、機器から読めています。
 
+```bash
+curl -s 127.0.0.1:8560/metrics | grep -E '^ts2560_(up|ntp_probe_stratum) '
+```
+
+`ts2560_up 1` なら、Web 画面をすべて読めています。
+
+Pod は、最初の収集が終わるまで Ready になりません（`/readyz`）。機器に届かないと、収集が終わるまで数十秒かかることがあります。
+
 ## よくあるつまずき
 
 | 症状 | 原因と対処 |
@@ -100,6 +109,49 @@ spec:
         - { protocol: UDP, port: 53 }
         - { protocol: TCP, port: 53 }
 ```
+
+## 監視
+
+### Prometheus Operator（kube-prometheus-stack など）を使っている場合
+
+`kustomization.yaml` の次のコメントを外すと、ServiceMonitor と PrometheusRule が一緒に入ります。
+
+```yaml
+components:
+  - monitoring
+```
+
+Prometheus が拾う ServiceMonitor や PrometheusRule をラベルで絞っている場合は、`monitoring/servicemonitor.yaml` と `monitoring/prometheusrule.yaml` の `metadata.labels` に合わせて足してください（kube-prometheus-stack の既定は `release: <リリース名>`）。
+
+```bash
+kubectl -n ts2560 get servicemonitor,prometheusrule
+```
+
+入るアラートは次のとおりです。しきい値は、手引きの目安（衛星4機以上、最大 S/N 40以上、内部温度60℃で異常）に合わせています。
+
+| アラート | 条件 | 重さ |
+|---|---|---|
+| `TS2560Unsynchronized` | 非同期で配信（LI=3） | critical |
+| `TS2560NTPNoResponse` | NTP に応答しない | critical |
+| `TS2560OnLocalClock` | 時刻源ではなく内部時計で配信 | critical |
+| `TS2560StratumHigh` | Stratum が 1 より大きい | warning |
+| `TS2560OffsetFromReference` | 公開NTPサーバーと 5ms 以上ずれている | warning |
+| `TS2560GNSSNotSync` | GNSS が Sync でない | warning |
+| `TS2560GNSSAntennaFault`・`TS2560GNSSSpoofing` | アンテナ異常、スプーフィング | critical |
+| `TS2560GNSSFewSatellites` | 測位の衛星が 4 機未満 | warning |
+| `TS2560GNSSWeakSignal` | 最大 S/N が 1 時間 40 未満 | warning |
+| `TS2560GNSSJammingRise` | 妨害電波の指標が 1 日の中央値より 40 以上高い | warning |
+| `TS2560HardwareFault` | 電源・ファン・発振器などが Normal でない | warning |
+| `TS2560TemperatureHigh` | 内部温度が 55℃ を超える | warning |
+| `TS2560DashboardCannotRead`・`TS2560DashboardStale` | ダッシュボードが機器を読めない、収集が止まっている | warning |
+
+### Prometheus Operator を使っていない場合
+
+Pod に `prometheus.io/scrape: "true"` などの annotation を付けてあるので、annotation で Pod を拾う設定の Prometheus ならそのまま集めます。そうでなければ、`ts2560-dashboard.ts2560.svc:80/metrics` を scrape の対象に足してください。アラートのルールは `monitoring/prometheusrule.yaml` の `spec.groups` の中身を、そのまま Prometheus のルールファイルとして使えます。
+
+### ログ
+
+`TS2560_LOG_FORMAT=json` にしてあるので、ログは1行1件の JSON です。Loki などに送るときにそのまま扱えます。
 
 ## 設定を変える
 

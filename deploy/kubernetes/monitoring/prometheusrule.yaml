@@ -1,0 +1,123 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: ts2560-dashboard
+  labels:
+    app.kubernetes.io/name: ts2560-dashboard
+    # Prometheus の ruleSelector に合わせる
+    # release: kube-prometheus-stack
+spec:
+  groups:
+    # ---- 時刻の配信（クライアントに直接影響する）
+    - name: ts2560.ntp
+      rules:
+        - alert: TS2560Unsynchronized
+          expr: ts2560_ntp_probe_leap_indicator == 3
+          for: 2m
+          labels: {severity: critical}
+          annotations:
+            summary: TS-2560 が非同期で配信しています（LI=3）
+            description: クライアントはこのサーバーに同期できません。時刻源とローカルクロックの同期維持時間を確認してください。
+        - alert: TS2560NTPNoResponse
+          expr: ts2560_ntp_probe_success == 0
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: TS-2560 が NTP（UDP 123）に応答しません
+        - alert: TS2560OnLocalClock
+          expr: ts2560_ntp_sync_source{source=~"local|none"} == 1
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: TS-2560 が時刻源ではなく内部時計（{{ $labels.source }}）で配信しています
+            description: 時刻源が使えないか、複数の時刻源が食い違って両方除外されています。/api/v1/ntp の peers を確認してください。
+        - alert: TS2560StratumHigh
+          expr: ts2560_ntp_probe_stratum > 1
+          for: 10m
+          labels: {severity: warning}
+          annotations:
+            summary: TS-2560 の Stratum が {{ $value }} です
+        - alert: TS2560OffsetFromReference
+          expr: abs(ts2560_reference_offset_seconds) > 0.005
+          for: 15m
+          labels: {severity: warning}
+          annotations:
+            summary: TS-2560 の時刻が公開NTPサーバーと {{ $value | humanizeDuration }} ずれています
+            description: インターネット越しの比較なので 1ms 程度の誤差はあります。
+
+    # ---- GNSS
+    - name: ts2560.gnss
+      rules:
+        - alert: TS2560GNSSNotSync
+          expr: ts2560_gnss_state{state="Sync"} == 0
+          for: 10m
+          labels: {severity: warning}
+          annotations:
+            summary: GNSS が同期していません
+            description: Holdover の間は配信を続けますが、同期維持時間（既定24時間）を過ぎると内部時計に切り替わります。
+        - alert: TS2560GNSSAntennaFault
+          expr: ts2560_gnss_antenna_ok == 0
+          for: 2m
+          labels: {severity: critical}
+          annotations:
+            summary: GNSS アンテナが異常です（ショートなど）
+        - alert: TS2560GNSSSpoofing
+          expr: ts2560_gnss_spoofing_detected == 1
+          labels: {severity: critical}
+          annotations:
+            summary: GNSS 受信機がスプーフィングを検出しています
+        # 手引き 6.8.1：同期可能な衛星が4機以上、最大 S/N が40以上になる場所に設置する
+        - alert: TS2560GNSSFewSatellites
+          expr: ts2560_gnss_satellites_tracked < 4
+          for: 30m
+          labels: {severity: warning}
+          annotations:
+            summary: 測位に使っている衛星が {{ $value }} 機です（4機以上が目安）
+        - alert: TS2560GNSSWeakSignal
+          expr: max_over_time(ts2560_gnss_snr_max[1h]) < 40
+          for: 1h
+          labels: {severity: warning}
+          annotations:
+            summary: GNSS の最大 S/N が1時間 40 未満です
+            description: 手引きでは通常40〜50、35以下ならアンテナの設置場所を見直すよう書かれています。
+        # 妨害電波の値は単位が分からないので、1日の中央値からの上昇で見る
+        - alert: TS2560GNSSJammingRise
+          expr: ts2560_gnss_jamming_strength > quantile_over_time(0.5, ts2560_gnss_jamming_strength[1d]) + 40
+          for: 10m
+          labels: {severity: warning}
+          annotations:
+            summary: 妨害電波の指標がふだんより上がっています（{{ $labels.band }}）
+
+    # ---- 機器
+    - name: ts2560.hardware
+      rules:
+        - alert: TS2560HardwareFault
+          expr: ts2560_hardware_normal == 0
+          for: 5m
+          labels: {severity: warning}
+          annotations:
+            summary: TS-2560 の {{ $labels.component }} が Normal ではありません
+        - alert: TS2560TemperatureHigh
+          # 機器は内部温度 60℃以上を異常とする
+          expr: ts2560_temperature_celsius > 55
+          for: 10m
+          labels: {severity: warning}
+          annotations:
+            summary: TS-2560 の内部温度が {{ $value }}℃ です（{{ $labels.location }}）
+
+    # ---- このダッシュボード自身
+    - name: ts2560.exporter
+      rules:
+        - alert: TS2560DashboardCannotRead
+          expr: ts2560_up == 0
+          for: 5m
+          labels: {severity: warning}
+          annotations:
+            summary: ダッシュボードが TS-2560 の Web 画面を読めていません
+            description: ログイン情報、機器の HTTP 設定、ネットワークを確認してください。/api/v1/status の errors に理由が出ます。
+        - alert: TS2560DashboardStale
+          expr: time() - ts2560_last_collect_timestamp_seconds > 120
+          for: 5m
+          labels: {severity: warning}
+          annotations:
+            summary: ダッシュボードの収集が止まっています

@@ -28,6 +28,9 @@ type Config struct {
 	HistoryPoints     int     `json:"history_points"`
 	GNSSHoldoverHours float64 `json:"gnss_holdover_hours"`
 
+	CORSOrigin string `json:"cors_origin"` // API を別のオリジンから読ませるとき（例: "*"）
+	LogFormat  string `json:"log_format"`  // "text"（既定）か "json"
+
 	DataDir string `json:"-"`
 	Demo    bool   `json:"-"`
 }
@@ -69,6 +72,8 @@ func loadConfig(path string, demo bool) (Config, error) {
 	cfg.Password = env("TS2560_PASSWORD", cfg.Password)
 	cfg.Bind = env("TS2560_BIND", cfg.Bind)
 	cfg.DataDir = env("TS2560_DATA", cfg.DataDir)
+	cfg.CORSOrigin = env("TS2560_CORS_ORIGIN", cfg.CORSOrigin)
+	cfg.LogFormat = env("TS2560_LOG_FORMAT", cfg.LogFormat)
 	if v := os.Getenv("TS2560_PORT"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			cfg.Port = n

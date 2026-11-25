@@ -16,6 +16,11 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: ts2560-dashboard
+      # Prometheus Operator を使わない構成（annotation で Pod を拾う設定）向け
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8560"
+        prometheus.io/path: /metrics
     spec:
       securityContext:
         runAsNonRoot: true
@@ -35,20 +40,23 @@ spec:
             - secretRef:
                 name: ts2560-credentials
           # 時刻を比べる公開NTPサーバー（UDP 123 で外に出られる必要がある）
-          # env:
+          env:
+            - name: TS2560_LOG_FORMAT # ログを JSON で出す（Loki などで扱いやすい）
+              value: json
           #   - name: TS2560_REFERENCE_NTP
           #     value: ntp.nict.jp,time.google.com
           volumeMounts:
             - name: data
               mountPath: /data
+          # 最初の収集が終わるまでは Service に入れない
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /readyz
               port: http
             periodSeconds: 10
           livenessProbe:
             httpGet:
-              path: /healthz
+              path: /livez
               port: http
             periodSeconds: 30
           resources:

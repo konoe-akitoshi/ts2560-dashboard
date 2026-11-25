@@ -1,0 +1,1473 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "ts2560-dashboard API",
+    "version": "1.0.0",
+    "license": {
+      "name": "MIT",
+      "identifier": "MIT"
+    },
+    "description": "セイコー TS-2560 の状態を、ダッシュボードが集めた結果から返す読み取り専用の API。機器には interval 秒ごとに1回だけアクセスし、API はその結果を返す（API を何度呼んでも機器の負荷は増えない）。非公式。"
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ],
+  "tags": [
+    {
+      "name": "status",
+      "description": "最後の収集結果"
+    },
+    {
+      "name": "stream",
+      "description": "更新の通知"
+    },
+    {
+      "name": "monitoring",
+      "description": "監視・プローブ"
+    },
+    {
+      "name": "meta"
+    }
+  ],
+  "paths": {
+    "/api/v1/status": {
+      "get": {
+        "summary": "収集結果のすべて",
+        "tags": [
+          "status"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Last-Modified": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "If-None-Match と同じ内容"
+          }
+        },
+        "description": "画面が使っているのと同じ JSON。/api/status も同じ（互換のため）。"
+      }
+    },
+    "/api/v1/ntp": {
+      "get": {
+        "summary": "NTP：ntpd の状態、ピア、このサーバーからの測定",
+        "tags": [
+          "status"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Last-Modified": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NTP"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "If-None-Match と同じ内容"
+          },
+          "503": {
+            "description": "まだ機器から読めていない",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/gnss": {
+      "get": {
+        "summary": "GNSS の状態",
+        "tags": [
+          "status"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Last-Modified": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GNSSStatus"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "If-None-Match と同じ内容"
+          },
+          "503": {
+            "description": "まだ機器から読めていない",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/gnss/satellites": {
+      "get": {
+        "summary": "見えている衛星",
+        "tags": [
+          "status"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Last-Modified": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Satellite"
+                  }
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "If-None-Match と同じ内容"
+          },
+          "503": {
+            "description": "まだ機器から読めていない",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sky": {
+      "get": {
+        "summary": "方角ごとの受信の記録",
+        "tags": [
+          "status"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Last-Modified": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Sky"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "If-None-Match と同じ内容"
+          },
+          "503": {
+            "description": "まだ機器から読めていない",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/hardware": {
+      "get": {
+        "summary": "電源・温度・ファンなど",
+        "tags": [
+          "status"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Last-Modified": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Hardware"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "If-None-Match と同じ内容"
+          },
+          "503": {
+            "description": "まだ機器から読めていない",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/device": {
+      "get": {
+        "summary": "機種・ファームウェア・アドレス",
+        "tags": [
+          "status"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Last-Modified": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Device"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "If-None-Match と同じ内容"
+          },
+          "503": {
+            "description": "まだ機器から読めていない",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "description": "interval より長い slow_interval ごとに読む。"
+      }
+    },
+    "/api/v1/clients": {
+      "get": {
+        "summary": "NTP クライアント（受信数の多い順）",
+        "tags": [
+          "status"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Last-Modified": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Client"
+                  }
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "If-None-Match と同じ内容"
+          },
+          "503": {
+            "description": "まだ機器から読めていない",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/requests": {
+      "get": {
+        "summary": "1時間ごとの NTP リクエスト数",
+        "tags": [
+          "status"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Last-Modified": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Requests"
+                  }
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "If-None-Match と同じ内容"
+          },
+          "503": {
+            "description": "まだ機器から読めていない",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/log": {
+      "get": {
+        "summary": "メッセージログ（新しい順、最大200行）",
+        "tags": [
+          "status"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Last-Modified": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LogLine"
+                  }
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "If-None-Match と同じ内容"
+          },
+          "503": {
+            "description": "まだ機器から読めていない",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/history": {
+      "get": {
+        "summary": "推移（interval 秒ごと、最大 history_points 点）",
+        "tags": [
+          "status"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Last-Modified": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/History"
+                  }
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "If-None-Match と同じ内容"
+          }
+        }
+      }
+    },
+    "/api/v1/alerts": {
+      "get": {
+        "summary": "いま出ている注意",
+        "tags": [
+          "status"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Last-Modified": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Alert"
+                  }
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "If-None-Match と同じ内容"
+          }
+        }
+      }
+    },
+    "/api/v1/events": {
+      "get": {
+        "summary": "収集が終わるたびに status を送る（Server-Sent Events）",
+        "tags": [
+          "stream"
+        ],
+        "description": "接続直後にいまの状態を1回送り、その後は収集のたびに `event: status` で /api/v1/status と同じ JSON を送る。`id` は収集の通し番号。25秒ごとにコメント行（`: ping`）を送る。",
+        "responses": {
+          "200": {
+            "description": "イベントの流れ",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                },
+                "example": "retry: 10000\nid: 42\nevent: status\ndata: {\"ok\":true,...}\n\n"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "summary": "Prometheus のメトリクス",
+        "tags": [
+          "monitoring"
+        ],
+        "responses": {
+          "200": {
+            "description": "テキスト形式 0.0.4",
+            "content": {
+              "text/plain; version=0.0.4": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/healthz": {
+      "get": {
+        "summary": "生きているか（liveness）。/livez も同じ",
+        "tags": [
+          "monitoring"
+        ],
+        "responses": {
+          "200": {
+            "description": "ok"
+          }
+        }
+      }
+    },
+    "/readyz": {
+      "get": {
+        "summary": "1回でも収集が終わったか（readiness）",
+        "tags": [
+          "monitoring"
+        ],
+        "responses": {
+          "200": {
+            "description": "ok"
+          },
+          "503": {
+            "description": "まだ"
+          }
+        }
+      }
+    },
+    "/api/openapi.json": {
+      "get": {
+        "summary": "この仕様",
+        "tags": [
+          "meta"
+        ],
+        "responses": {
+          "200": {
+            "description": "OpenAPI 3.1",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "NTPProbe": {
+        "type": "object",
+        "properties": {
+          "stratum": {
+            "type": "integer"
+          },
+          "leap": {
+            "type": "integer",
+            "description": "3 = 非同期"
+          },
+          "refid": {
+            "type": "string"
+          },
+          "offset": {
+            "type": "number",
+            "description": "このサーバーの時計との差（秒）"
+          },
+          "rtt": {
+            "type": "number",
+            "description": "往復時間（秒）"
+          }
+        }
+      },
+      "NTPState": {
+        "type": "object",
+        "properties": {
+          "system_peer": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stratum": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "refid": {
+            "type": "string"
+          },
+          "root_dispersion": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "jitter": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "leap": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "Peer": {
+        "type": "object",
+        "properties": {
+          "tally": {
+            "type": "string",
+            "enum": [
+              "selected",
+              "candidate",
+              "falseticker",
+              "outlier",
+              "reject",
+              "backup",
+              "pps",
+              "excess"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "refid": {
+            "type": "string"
+          },
+          "stratum": {
+            "type": "integer"
+          },
+          "when": {
+            "type": "string"
+          },
+          "poll": {
+            "type": "integer"
+          },
+          "reach": {
+            "type": "integer",
+            "description": "到達レジスタ（8進数 377 = 255）"
+          },
+          "offset_ms": {
+            "type": "number"
+          },
+          "jitter_ms": {
+            "type": "number"
+          }
+        }
+      },
+      "Satellite": {
+        "type": "object",
+        "properties": {
+          "prn": {
+            "type": "integer"
+          },
+          "system": {
+            "type": "string",
+            "examples": [
+              "GPS",
+              "QZSS",
+              "GLONASS",
+              "GALILEO"
+            ]
+          },
+          "elev": {
+            "type": "integer",
+            "description": "仰角（度）"
+          },
+          "azim": {
+            "type": "integer",
+            "description": "方位角（度）"
+          },
+          "snr": {
+            "type": "integer",
+            "description": "dB-Hz"
+          },
+          "tracked": {
+            "type": "boolean"
+          },
+          "snr_min": {
+            "type": "integer",
+            "description": "直近60回の最小"
+          },
+          "snr_max": {
+            "type": "integer",
+            "description": "直近60回の最大"
+          }
+        }
+      },
+      "Jamming": {
+        "type": "object",
+        "properties": {
+          "band": {
+            "type": "string"
+          },
+          "freq": {
+            "type": "number",
+            "description": "MHz"
+          },
+          "strength": {
+            "type": "integer",
+            "description": "単位不明。ふだんの値との差で見る"
+          }
+        }
+      },
+      "GNSS": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "Init",
+              "Sync",
+              "Holdover",
+              "Unsync",
+              "Forcesync",
+              "Disabled",
+              null
+            ]
+          },
+          "last_adjust": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "offset_s": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "ppb": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "antenna": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "positioning": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pdop": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "hdop": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "vdop": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "tracking": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "visible": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "max_snr": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "spoofing": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "latitude": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "longitude": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "altitude": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "transitions": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "satellites": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Satellite"
+            }
+          },
+          "jamming": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Jamming"
+            }
+          }
+        }
+      },
+      "Hardware": {
+        "type": "object",
+        "properties": {
+          "psu": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "temps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string"
+                },
+                "celsius": {
+                  "type": "number"
+                }
+              }
+            }
+          },
+          "oscillator": {
+            "type": "string"
+          },
+          "fan": {
+            "type": "string"
+          },
+          "rtc_battery": {
+            "type": "string"
+          }
+        }
+      },
+      "Device": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subsystem": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hostname": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "serial": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "boot_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "uptime": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ipv4": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "ipv6": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "Client": {
+        "type": "object",
+        "properties": {
+          "addr": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer"
+          },
+          "last": {
+            "type": "integer",
+            "description": "最後に受信してからの秒数"
+          },
+          "avg": {
+            "type": "integer",
+            "description": "平均の受信間隔（秒）"
+          }
+        }
+      },
+      "Requests": {
+        "type": "object",
+        "properties": {
+          "t": {
+            "type": "string",
+            "examples": [
+              "2026-11-18T16:00"
+            ]
+          },
+          "count": {
+            "type": "integer"
+          }
+        }
+      },
+      "LogLine": {
+        "type": "object",
+        "properties": {
+          "time": {
+            "type": "string"
+          },
+          "proc": {
+            "type": "string"
+          },
+          "msg": {
+            "type": "string"
+          }
+        }
+      },
+      "Alert": {
+        "type": "object",
+        "properties": {
+          "level": {
+            "type": "string",
+            "enum": [
+              "critical",
+              "serious",
+              "warning"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "level",
+          "title",
+          "detail"
+        ]
+      },
+      "History": {
+        "type": "object",
+        "properties": {
+          "t": {
+            "type": "integer",
+            "description": "Unix 時刻"
+          },
+          "ref_diff_ms": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "gnss_offset_ms": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "tracking": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "gnss_us": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "avg_snr": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "jamming": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        }
+      },
+      "Sky": {
+        "type": "object",
+        "properties": {
+          "az_step": {
+            "type": "integer"
+          },
+          "el_step": {
+            "type": "integer"
+          },
+          "interval": {
+            "type": "integer"
+          },
+          "cells": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              }
+            }
+          }
+        },
+        "description": "これまでの受信の記録。cells は [方位の区画, 仰角の区画, 回数, 平均の受信強度]"
+      },
+      "NTP": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NTPState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "peers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Peer"
+            }
+          },
+          "probe": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NTPProbe"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reference_offset_ms": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "機器 − 公開NTPサーバーの中央値（ms、正なら機器が進んでいる）"
+          },
+          "reference": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "GNSSStatus": {
+        "type": "object",
+        "properties": {
+          "gnss": {
+            "$ref": "#/components/schemas/GNSS"
+          },
+          "since": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "いまの状態になった Unix 時刻（このサーバーが見た範囲）"
+          },
+          "since_exact": {
+            "type": "boolean"
+          },
+          "holdover_hours": {
+            "type": "number"
+          }
+        }
+      },
+      "Status": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "updated": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "demo": {
+            "type": "boolean"
+          },
+          "host": {
+            "type": "string"
+          },
+          "ntp_probe": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NTPProbe"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ref_diff_ms": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "reference": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/History"
+            }
+          },
+          "gnss_since": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "gnss_since_exact": {
+            "type": "boolean"
+          },
+          "holdover_hours": {
+            "type": "number"
+          },
+          "sky": {
+            "$ref": "#/components/schemas/Sky"
+          },
+          "ntp": {
+            "$ref": "#/components/schemas/NTPState"
+          },
+          "peers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Peer"
+            }
+          },
+          "gnss": {
+            "$ref": "#/components/schemas/GNSS"
+          },
+          "hardware": {
+            "$ref": "#/components/schemas/Hardware"
+          },
+          "device": {
+            "$ref": "#/components/schemas/Device"
+          },
+          "clients": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Client"
+            }
+          },
+          "requests": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Requests"
+            }
+          },
+          "log": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LogLine"
+            }
+          },
+          "alerts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Alert"
+            }
+          }
+        },
+        "required": [
+          "ok",
+          "errors",
+          "alerts",
+          "history"
+        ]
+      },
+      "Problem": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "detail": {
+            "type": "string"
+          }
+        },
+        "description": "RFC 9457"
+      }
+    },
+    "parameters": {
+      "IfNoneMatch": {
+        "name": "If-None-Match",
+        "in": "header",
+        "required": false,
+        "schema": {
+          "type": "string"
+        },
+        "description": "前回の ETag。変わっていなければ 304"
+      }
+    }
+  }
+}

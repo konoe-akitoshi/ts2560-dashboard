@@ -82,7 +82,12 @@ type Collector struct {
 	src Source
 
 	mu    sync.RWMutex
-	state []byte // 最後に作った Snapshot の JSON
+	snap  *Snapshot                  // 最後に作った Snapshot。公開したあとは書き換えない
+	state []byte                     // その JSON
+	seq   uint64                     // 収集した回数（0 はまだ一度も終わっていない）
+	at    time.Time                  // 最後に収集が終わった時刻
+	dur   time.Duration              // その収集にかかった時間
+	subs  map[chan struct{}]struct{} // 更新を待っている SSE の接続
 
 	history           []Hist
 	sky               map[string][2]float64 // "方位の区画,仰角の区画" -> [回数, 受信強度の合計]
@@ -98,7 +103,7 @@ type Collector struct {
 }
 
 func newCollector(cfg Config) *Collector {
-	c := &Collector{cfg: cfg, sky: map[string][2]float64{}, satSNR: map[string][]int{}, savedAt: time.Now()}
+	c := &Collector{cfg: cfg, sky: map[string][2]float64{}, satSNR: map[string][]int{}, savedAt: time.Now(), subs: map[chan struct{}]struct{}{}}
 	if cfg.Demo {
 		c.src = newDemo()
 	} else {
@@ -118,7 +123,8 @@ func newCollector(cfg Config) *Collector {
 	if n := len(c.history); n > cfg.HistoryPoints {
 		c.history = c.history[n-cfg.HistoryPoints:]
 	}
-	c.state, _ = json.Marshal(Snapshot{Errors: []string{"起動中…"}, Host: cfg.Host, Demo: cfg.Demo, History: []Hist{}, Alerts: []Alert{}})
+	c.snap = &Snapshot{Errors: []string{"起動中…"}, Host: cfg.Host, Demo: cfg.Demo, History: []Hist{}, Alerts: []Alert{}}
+	c.state, _ = json.Marshal(c.snap)
 	return c
 }
 
@@ -141,11 +147,51 @@ func writeJSON(path string, v any) error {
 	return os.Rename(path+".tmp", path)
 }
 
-// State は最後の収集結果（JSON）を返す。
-func (c *Collector) State() []byte {
+// View は最後の収集結果。Snap は読むだけにすること。
+type View struct {
+	Snap *Snapshot
+	JSON []byte
+	Seq  uint64
+	At   time.Time
+	Dur  time.Duration
+}
+
+func (c *Collector) View() View {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.state
+	return View{c.snap, c.state, c.seq, c.at, c.dur}
+}
+
+// State は最後の収集結果（JSON）を返す。
+func (c *Collector) State() []byte { return c.View().JSON }
+
+// Subscribe は収集が終わるたびに知らせるチャネルと、購読をやめる関数を返す。
+func (c *Collector) Subscribe() (<-chan struct{}, func()) {
+	ch := make(chan struct{}, 1)
+	c.mu.Lock()
+	c.subs[ch] = struct{}{}
+	c.mu.Unlock()
+	return ch, func() {
+		c.mu.Lock()
+		delete(c.subs, ch)
+		c.mu.Unlock()
+	}
+}
+
+func (c *Collector) publish(s *Snapshot, start time.Time) {
+	b, err := json.Marshal(s)
+	if err != nil {
+		b, _ = json.Marshal(Snapshot{Errors: []string{err.Error()}, History: []Hist{}, Alerts: []Alert{}})
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.snap, c.state, c.seq, c.at, c.dur = s, b, c.seq+1, time.Now(), time.Since(start)
+	for ch := range c.subs {
+		select {
+		case ch <- struct{}{}:
+		default: // まだ前の知らせを読んでいない接続には、重ねて送らない
+		}
+	}
 }
 
 func (c *Collector) Run(stop <-chan struct{}) {
@@ -163,28 +209,17 @@ func (c *Collector) Run(stop <-chan struct{}) {
 }
 
 func (c *Collector) once() {
+	start := time.Now()
 	defer func() { // 収集が丸ごと失敗しても、画面にはエラーとして出す
 		if r := recover(); r != nil {
-			var s Snapshot
-			c.mu.RLock()
-			_ = json.Unmarshal(c.state, &s)
-			c.mu.RUnlock()
+			s := *c.View().Snap
 			s.OK, s.Errors = false, []string{fmt.Sprintf("収集エラー: %v", r)}
 			s.Alerts = []Alert{{"critical", "収集エラー", s.Errors[0]}}
-			b, _ := json.Marshal(s)
-			c.mu.Lock()
-			c.state = b
-			c.mu.Unlock()
+			c.publish(&s, start)
 		}
 	}()
 	snap := c.collect()
-	b, err := json.Marshal(snap)
-	if err != nil {
-		panic(err)
-	}
-	c.mu.Lock()
-	c.state = b
-	c.mu.Unlock()
+	c.publish(&snap, start)
 }
 
 // measure は NTP で機器と基準サーバーを測り、差（機器 − 基準）を ms で返す。基準は複数台の中央値。

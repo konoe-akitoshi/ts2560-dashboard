@@ -1,7 +1,8 @@
 // ts2560-dashboard は、セイコー TS-2560 タイムサーバーの状態を1画面で見るためのダッシュボード。
 //
 // 機器の Web 画面にログインして状態画面のテキストを読み、NTP(UDP 123) で公開NTPサーバーとの
-// 時刻差も測って、/api/status に JSON で出す。画面（web/index.html）は実行ファイルに埋め込んである。
+// 時刻差も測る。結果は画面（web/index.html、実行ファイルに埋め込み）、JSON の API（/api/v1/...）、
+// Server-Sent Events（/api/v1/events）、Prometheus のメトリクス（/metrics）で出す。
 package main
 
 import (
@@ -10,6 +11,7 @@ import (
 	"errors"
 	"flag"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -21,6 +23,9 @@ import (
 
 //go:embed web/index.html
 var indexHTML []byte
+
+//go:embed web/openapi.json
+var openAPI []byte
 
 func main() {
 	demo := flag.Bool("demo", false, "実機なしのデモデータで起動する")
@@ -40,22 +45,21 @@ func main() {
 		cfg.Bind = *bind
 	}
 
+	var h slog.Handler = slog.NewTextHandler(os.Stderr, nil)
+	if cfg.LogFormat == "json" {
+		h = slog.NewJSONHandler(os.Stderr, nil)
+	}
+	slog.SetDefault(slog.New(h)) // log.Printf もこの形式で出る
+
 	col := newCollector(cfg)
 	stop := make(chan struct{})
 	done := make(chan struct{})
 	go func() { col.Run(stop); close(done) }()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/status", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-store")
-		_, _ = w.Write(col.State())
-	})
-	// 死活確認。収集サーバー自体が動いていれば 200 を返す（機器の状態は /api/status の ok で見る）
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		_, _ = w.Write([]byte("ok\n"))
-	})
+	registerAPI(mux, col, cfg.CORSOrigin)
+	registerMetrics(mux, col)
+	registerHealth(mux, col)
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
@@ -63,13 +67,16 @@ func main() {
 	})
 
 	addr := net.JoinHostPort(cfg.Bind, strconv.Itoa(cfg.Port))
-	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	// SSE の長い接続を、止めるときにすぐ切れるようにする
+	base, cancelBase := context.WithCancel(context.Background())
+	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second,
+		BaseContext: func(net.Listener) context.Context { return base }}
 	go func() {
 		target := cfg.Host
 		if cfg.Demo {
 			target = "デモデータ"
 		}
-		log.Printf("TS-2560 dashboard: http://%s/ (%s)", addr, target)
+		slog.Info("TS-2560 dashboard", "url", "http://"+addr+"/", "target", target, "version", version)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatal(err)
 		}
@@ -79,12 +86,13 @@ func main() {
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	<-sig
+	cancelBase()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(ctx)
 	close(stop)
-	select {
+	select { // 履歴の保存を待つ
 	case <-done:
-	case <-ctx.Done():
+	case <-time.After(5 * time.Second):
 	}
 }
