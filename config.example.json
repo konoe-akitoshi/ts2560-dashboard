@@ -10,5 +10,7 @@
   "max_stratum": 1,
   "max_ref_diff_ms": 5,
   "jamming_rise": 40,
-  "gnss_holdover_hours": 24
+  "gnss_holdover_hours": 24,
+  "log_format": "text",
+  "cors_origin": ""
 }

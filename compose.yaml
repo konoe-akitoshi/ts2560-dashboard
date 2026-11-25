@@ -9,6 +9,7 @@ services:
       TS2560_HOST: ${TS2560_HOST}
       TS2560_USERNAME: ${TS2560_USERNAME}
       TS2560_PASSWORD: ${TS2560_PASSWORD}
+      # TS2560_LOG_FORMAT: json
     volumes:
       - ts2560-data:/data
 

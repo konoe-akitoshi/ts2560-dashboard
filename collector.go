@@ -41,7 +41,7 @@ type SkyOut struct {
 	Cells    [][]float64 `json:"cells"` // [方位の区画, 仰角の区画, 回数, 平均の受信強度]
 }
 
-// Snapshot は /api/status がそのまま返す、収集結果のすべて。
+// Snapshot は /api/v1/status がそのまま返す、収集結果のすべて。
 type Snapshot struct {
 	OK             bool      `json:"ok"`
 	Errors         []string  `json:"errors"`

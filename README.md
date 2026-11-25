@@ -26,6 +26,24 @@ SNMP では取れない情報（衛星ごとの方角と受信強度、妨害電
   - 妨害電波の指標：ふだん（中央値）との比較
 - 機器情報、NTPリクエスト数、クライアント一覧、ログ
 
+## しくみ
+
+```
+TS-2560 ──Web画面（ログインして読む）──┐
+        ──NTP（UDP 123）────────────┤
+公開NTPサーバー ──NTP（UDP 123）──────┤
+                                      ▼
+                         ts2560-dashboard（interval 秒ごとに1回収集）
+                          ├─ 画面          GET /
+                          ├─ JSON API      GET /api/v1/...（OpenAPI 3.1）
+                          ├─ 更新の通知    GET /api/v1/events（SSE）
+                          └─ メトリクス    GET /metrics（Prometheus）
+```
+
+- 機器へのアクセスは収集の1回だけです。画面を何人で開いても、API や Prometheus から何度読んでも、機器の負荷は変わりません。
+- 機器の設定を変える操作はしません（読み取り専用）。
+- 履歴（推移と空の受信記録）は `TS2560_DATA` のフォルダに1分ごとと終了時に保存し、再起動しても引き継ぎます。
+
 ## 動かす
 
 ### 手元で
@@ -46,6 +64,8 @@ go run .                  # http://127.0.0.1:8560/
 TS2560_HOST=192.0.2.10 TS2560_USERNAME=... TS2560_PASSWORD=... docker compose up -d
 ```
 
+http://localhost:8560/ が画面、http://localhost:8560/metrics がメトリクスです。
+
 ### Kubernetes
 
 ```bash
@@ -58,6 +78,7 @@ kubectl -n ts2560 port-forward svc/ts2560-dashboard 8560:80
 - 履歴はボリューム（PVC 100Mi）に保存するので、Pod は1台で動かします（`Recreate`）。
 - Pod から機器（HTTP と UDP 123）と、公開NTPサーバー（UDP 123）に届く必要があります。NetworkPolicy で外向きの通信を絞っている場合は許可してください。
 - 外から見せる場合は、Service に Ingress などを足してください。ダッシュボード自体にログイン機能はありません。
+- Prometheus Operator を使っていれば、ServiceMonitor とアラートのルールも一緒に入れられます。
 
 確かめ方、つまずきやすいところ、NetworkPolicy と Ingress の例、更新のしかたは [deploy/kubernetes/README.md](deploy/kubernetes/README.md) にまとめています。
 
@@ -138,11 +159,48 @@ Prometheus の指針では、エクスポーターはスクレイプのたびに
 
 Kubernetes 用の ServiceMonitor と、手引きの目安に合わせたアラートのルール（PrometheusRule）を [deploy/kubernetes/monitoring](deploy/kubernetes/monitoring) に置いています。
 
+## ほかの監視ツールから
+
+### Zabbix
+
+専用のテンプレートはまだありませんが、Zabbix の HTTP エージェントで読めます。
+
+- **`/metrics` を読む**：`/metrics` を読むアイテムを1つ作り、従属アイテムの前処理「Prometheus pattern」で値を1つずつ取り出します（例：`ts2560_ntp_sync_source{source="local"}`）。衛星や時刻源のように数が変わるものは、前処理「Prometheus to JSON」とローレベルディスカバリで作れます。
+- **JSON を読む**：`/api/v1/ntp` などを読み、JSONPath で取り出します（例：`$.state.system_peer`）。文字列でトリガーを書きたいときに向いています。
+
+どちらも、アイテムを増やしても機器へのアクセスは増えません。
+
+### SNMP とあわせて使う
+
+TS-2560 は SNMP にも対応していて、状態が変わったときにトラップを送れます（GNSS が Holdover になった、ローカルクロックに切り替わった、電源の異常など）。
+すぐに知らせるのは機器の SNMP トラップ、細かい値と推移はこのダッシュボード、と分けると、ダッシュボードが止まっていても異常に気づけます。
+SNMP では、衛星ごとの方角や受信強度、妨害電波、ntpd の時刻源の選択状況、クライアント一覧は取れません。
+
+## 開発
+
+```bash
+go test ./...      # パーサー、API、メトリクスの書式、SSE、OpenAPI と実装の対応を確かめる
+go run . -demo     # デモデータで画面を見る
+```
+
+| ファイル | 内容 |
+|---|---|
+| `device.go` | 機器へのログインと画面の取得、デモデータ |
+| `parse.go` | 機器の画面（HTML）を読み取る |
+| `ntp.go` | NTP の問い合わせ |
+| `collector.go` | 定期的な収集、履歴、注意の判定 |
+| `api.go` | JSON API、SSE、ヘルスチェック |
+| `metrics.go` | Prometheus のメトリクス |
+| `web/index.html` | 画面 |
+| `web/openapi.json` | API の仕様 |
+
+API を変えたら `web/openapi.json` も直してください。書いてあるパスが実際に返ってくるかはテストで確かめています。
+
 ## 注意
 
 - 機器の Web 画面の HTML を読んでいるので、ファームウェアの更新で画面が変わると読めなくなることがあります。動作を確かめたのはファームウェア 8.0.0 です。
 - 「妨害電波の指標」は TS-2560 が報告している値をそのまま出しています。単位と、いくつから問題かの基準は確認できていないので、絶対値ではなく、ふだんとの差で見てください。
-- 受信強度の「十分／やや弱め／弱い」などの境目は、目安として置いた値です。
+- 画面の受信強度の「十分／やや弱め／弱い」の境目は、目安として置いた値です。アラートのルールは、機器の手引きの目安（衛星4機以上、最大 S/N 40以上、内部温度60℃で異常）に合わせています。
 
 ## ライセンス
 
